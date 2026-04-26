@@ -1,4 +1,4 @@
-import type { Board, Column, Card } from "./types";
+import type { Board, Column, Card, Pipeline, Execution, MissingParam } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -74,5 +74,53 @@ export const api = {
       }),
     delete: (id: string) =>
       request<void>(`/api/cards/${id}`, { method: "DELETE" }),
+  },
+
+  pipelines: {
+    listByBoard: (boardId: string) =>
+      request<Record<string, Pipeline>>(`/api/boards/${boardId}/pipelines`),
+    get: (columnId: string) =>
+      request<Pipeline>(`/api/columns/${columnId}/pipeline`),
+    save: (columnId: string, definition: unknown) =>
+      request<Pipeline>(`/api/columns/${columnId}/pipeline`, {
+        method: "PUT",
+        body: JSON.stringify(definition),
+      }),
+    delete: (columnId: string) =>
+      request<void>(`/api/columns/${columnId}/pipeline`, { method: "DELETE" }),
+  },
+
+  executions: {
+    trigger: async (
+      cardId: string,
+      columnId: string
+    ): Promise<{ executionId: string } | { missing: MissingParam[] }> => {
+      const res = await fetch("/api/executions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId, columnId }),
+      });
+      if (res.status === 409) return res.json();
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${res.statusText}: ${text}`);
+      }
+      return res.json();
+    },
+    get: (id: string) => request<Execution>(`/api/executions/${id}`),
+    latestForCard: (cardId: string) =>
+      request<Execution>(`/api/cards/${cardId}/executions/latest`),
+  },
+
+  parameters: {
+    save: (
+      scope: "pipeline" | "board",
+      scopeId: string,
+      values: Record<string, string>
+    ) =>
+      request<void>("/api/parameters", {
+        method: "POST",
+        body: JSON.stringify({ scope, scopeId, values }),
+      }),
   },
 };

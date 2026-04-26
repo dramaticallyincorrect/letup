@@ -3,6 +3,9 @@ import cors from "@fastify/cors";
 import { boardRoutes } from "./routes/boards.js";
 import { columnRoutes } from "./routes/columns.js";
 import { cardRoutes } from "./routes/cards.js";
+import { pipelineRoutes } from "./routes/pipelines.js";
+import { executionRoutes } from "./routes/executions.js";
+import { parameterRoutes } from "./routes/parameters.js";
 import { ZodError } from "zod";
 
 const app = Fastify({ logger: { level: "info" } });
@@ -20,6 +23,9 @@ app.setErrorHandler((err, _req, reply) => {
 await app.register(boardRoutes);
 await app.register(columnRoutes);
 await app.register(cardRoutes);
+await app.register(pipelineRoutes);
+await app.register(executionRoutes);
+await app.register(parameterRoutes);
 
 const PORT = Number(process.env.PORT ?? 3001);
 await app.listen({ port: PORT, host: "127.0.0.1" });

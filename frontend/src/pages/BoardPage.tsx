@@ -18,25 +18,27 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useState } from "react";
 import { api } from "../api/client";
-import type { Column, Card } from "../api/types";
+import type { Column, Card, Pipeline, MissingParam } from "../api/types";
+import { PipelineEditor } from "../components/PipelineEditor";
+import { ParameterForm } from "../components/ParameterForm";
+import { ExecutionDrawer, ExecutionStatusDot } from "../components/ExecutionDrawer";
+import type { ExecutionStatus } from "../api/types";
 
-// ─── SortableCard ────────────────────────────────────────────────────────────
+// ─── SortableCard ─────────────────────────────────────────────────────────────
 
 function SortableCard({
   card,
   onDelete,
+  executionStatus,
+  onOpenExecution,
 }: {
   card: Card;
   onDelete: (id: string) => void;
+  executionStatus?: ExecutionStatus;
+  onOpenExecution?: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: card.id, data: { type: "card", card } });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: card.id, data: { type: "card", card } });
 
   return (
     <div
@@ -49,9 +51,20 @@ function SortableCard({
       {...listeners}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-sm font-medium text-gray-800 leading-snug">
-          {card.title}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {executionStatus && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={onOpenExecution}
+              title="View execution logs"
+            >
+              <ExecutionStatusDot status={executionStatus} />
+            </button>
+          )}
+          <span className="text-sm font-medium text-gray-800 leading-snug truncate">
+            {card.title}
+          </span>
+        </div>
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => onDelete(card.id)}
@@ -61,9 +74,7 @@ function SortableCard({
         </button>
       </div>
       {card.description && (
-        <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-          {card.description}
-        </p>
+        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{card.description}</p>
       )}
     </div>
   );
@@ -77,24 +88,32 @@ function CardGhost({ card }: { card: Card }) {
   );
 }
 
-// ─── ColumnView ──────────────────────────────────────────────────────────────
+// ─── ColumnView ───────────────────────────────────────────────────────────────
 
 function ColumnView({
   column,
   cards,
+  pipeline,
   onDeleteCard,
   onDeleteColumn,
   onRenameColumn,
   onAddCard,
+  onOpenPipeline,
   isOver,
+  cardExecutionStatuses,
+  onOpenExecution,
 }: {
   column: Column;
   cards: Card[];
+  pipeline: Pipeline | undefined;
   onDeleteCard: (id: string) => void;
   onDeleteColumn: (id: string) => void;
   onRenameColumn: (id: string, name: string) => void;
   onAddCard: (columnId: string, title: string) => void;
+  onOpenPipeline: (columnId: string) => void;
   isOver: boolean;
+  cardExecutionStatuses: Record<string, { status: ExecutionStatus; executionId: string }>;
+  onOpenExecution: (executionId: string) => void;
 }) {
   const [addingCard, setAddingCard] = useState(false);
   const [newCardTitle, setNewCardTitle] = useState("");
@@ -152,23 +171,42 @@ function ColumnView({
             {column.name}
           </button>
         )}
-        <span className="text-xs text-gray-400 shrink-0">{cards.length}</span>
-        <button
-          onClick={() => onDeleteColumn(column.id)}
-          className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 text-xs shrink-0"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-xs text-gray-400">{cards.length}</span>
+          <button
+            onClick={() => onOpenPipeline(column.id)}
+            title={pipeline ? "Edit pipeline" : "Add pipeline"}
+            className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
+              pipeline
+                ? "text-indigo-600 bg-indigo-100 hover:bg-indigo-200"
+                : "text-gray-400 hover:text-indigo-600 hover:bg-indigo-50"
+            }`}
+          >
+            ⚡
+          </button>
+          <button
+            onClick={() => onDeleteColumn(column.id)}
+            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 text-xs"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
-      <SortableContext
-        items={cards.map((c) => c.id)}
-        strategy={verticalListSortingStrategy}
-      >
+      <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
         <div className="flex flex-col gap-2 px-2 min-h-[2rem] flex-1">
-          {cards.map((card) => (
-            <SortableCard key={card.id} card={card} onDelete={onDeleteCard} />
-          ))}
+          {cards.map((card) => {
+            const exec = cardExecutionStatuses[card.id];
+            return (
+              <SortableCard
+                key={card.id}
+                card={card}
+                onDelete={onDeleteCard}
+                executionStatus={exec?.status}
+                onOpenExecution={exec ? () => onOpenExecution(exec.executionId) : undefined}
+              />
+            );
+          })}
         </div>
       </SortableContext>
 
@@ -211,7 +249,7 @@ function ColumnView({
   );
 }
 
-// ─── BoardPage ────────────────────────────────────────────────────────────────
+// ─── BoardPage ─────────────────────────────────────────────────────────────────
 
 export function BoardPage() {
   const { boardId } = useParams({ from: "/boards/$boardId" });
@@ -232,10 +270,27 @@ export function BoardPage() {
     queryFn: () => api.cards.listByBoard(boardId),
   });
 
+  const { data: pipelines = {} } = useQuery({
+    queryKey: ["pipelines", boardId],
+    queryFn: () => api.pipelines.listByBoard(boardId),
+  });
+
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColName, setNewColName] = useState("");
   const [activeCard, setActiveCard] = useState<Card | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
+  const [pipelineEditorColumnId, setPipelineEditorColumnId] = useState<string | null>(null);
+  const [openExecutionId, setOpenExecutionId] = useState<string | null>(null);
+  // cardId → { status, executionId }
+  const [cardExecutionStatuses, setCardExecutionStatuses] = useState<
+    Record<string, { status: ExecutionStatus; executionId: string }>
+  >({});
+  const [pendingTrigger, setPendingTrigger] = useState<{
+    cardId: string;
+    columnId: string;
+    missing: MissingParam[];
+  } | null>(null);
+  const [paramFormSaving, setParamFormSaving] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -328,14 +383,74 @@ export function BoardPage() {
       return;
     }
 
-    if (card.column_id === targetColumnId && card.position === targetPosition)
-      return;
+    if (card.column_id === targetColumnId && card.position === targetPosition) return;
 
-    moveCardMutation.mutate({
-      id: card.id,
-      columnId: targetColumnId,
-      position: targetPosition,
+    moveCardMutation.mutate({ id: card.id, columnId: targetColumnId, position: targetPosition });
+
+    if (pipelines[targetColumnId]) {
+      fireTrigger(card.id, targetColumnId);
+    }
+  };
+
+  const fireTrigger = (cardId: string, columnId: string) => {
+    setCardExecutionStatuses((prev) => ({
+      ...prev,
+      [cardId]: { status: "pending", executionId: "" },
+    }));
+    api.executions.trigger(cardId, columnId).then((result) => {
+      if ("missing" in result) {
+        setCardExecutionStatuses((prev) => {
+          const next = { ...prev };
+          delete next[cardId];
+          return next;
+        });
+        setPendingTrigger({ cardId, columnId, missing: result.missing });
+        return;
+      }
+
+      const { executionId } = result;
+      setCardExecutionStatuses((prev) => ({
+        ...prev,
+        [cardId]: { status: "running", executionId },
+      }));
+      setOpenExecutionId(executionId);
+
+      const source = new EventSource(`/api/executions/${executionId}/logs`);
+      source.addEventListener("done", (e) => {
+        const { status: finalStatus } = JSON.parse(e.data) as { status: ExecutionStatus };
+        setCardExecutionStatuses((prev) => ({
+          ...prev,
+          [cardId]: { status: finalStatus, executionId },
+        }));
+        source.close();
+      });
+      source.onerror = () => {
+        setCardExecutionStatuses((prev) => ({
+          ...prev,
+          [cardId]: { status: "failed", executionId },
+        }));
+        source.close();
+      };
+    }).catch(() => {
+      setCardExecutionStatuses((prev) => {
+        const next = { ...prev };
+        delete next[cardId];
+        return next;
+      });
     });
+  };
+
+  const handleParamSave = async (values: Record<string, string>) => {
+    if (!pendingTrigger) return;
+    setParamFormSaving(true);
+    try {
+      await api.parameters.save("pipeline", pendingTrigger.columnId, values);
+      const { cardId, columnId } = pendingTrigger;
+      setPendingTrigger(null);
+      fireTrigger(cardId, columnId);
+    } finally {
+      setParamFormSaving(false);
+    }
   };
 
   const handleAddColumn = (e: React.FormEvent) => {
@@ -370,24 +485,21 @@ export function BoardPage() {
                   key={col.id}
                   column={col}
                   cards={cardsByColumn(col.id)}
+                  pipeline={pipelines[col.id]}
                   isOver={overColumnId === col.id}
                   onDeleteCard={(id) => deleteCardMutation.mutate(id)}
                   onDeleteColumn={(id) => deleteColumnMutation.mutate(id)}
-                  onRenameColumn={(id, name) =>
-                    renameColumnMutation.mutate({ id, name })
-                  }
-                  onAddCard={(columnId, title) =>
-                    addCardMutation.mutate({ columnId, title })
-                  }
+                  onRenameColumn={(id, name) => renameColumnMutation.mutate({ id, name })}
+                  onAddCard={(columnId, title) => addCardMutation.mutate({ columnId, title })}
+                  onOpenPipeline={(columnId) => setPipelineEditorColumnId(columnId)}
+                  cardExecutionStatuses={cardExecutionStatuses}
+                  onOpenExecution={(execId) => setOpenExecutionId(execId)}
                 />
               ))}
             </SortableContext>
 
             {addingColumn ? (
-              <form
-                onSubmit={handleAddColumn}
-                className="flex flex-col gap-2 w-72 shrink-0"
-              >
+              <form onSubmit={handleAddColumn} className="flex flex-col gap-2 w-72 shrink-0">
                 <input
                   autoFocus
                   value={newColName}
@@ -426,6 +538,31 @@ export function BoardPage() {
           </DragOverlay>
         </DndContext>
       </div>
+
+      {pipelineEditorColumnId && (
+        <PipelineEditor
+          boardId={boardId}
+          columnId={pipelineEditorColumnId}
+          pipeline={pipelines[pipelineEditorColumnId]}
+          onClose={() => setPipelineEditorColumnId(null)}
+        />
+      )}
+
+      {pendingTrigger && (
+        <ParameterForm
+          missing={pendingTrigger.missing}
+          saving={paramFormSaving}
+          onSave={handleParamSave}
+          onCancel={() => setPendingTrigger(null)}
+        />
+      )}
+
+      {openExecutionId && (
+        <ExecutionDrawer
+          executionId={openExecutionId}
+          onClose={() => setOpenExecutionId(null)}
+        />
+      )}
     </div>
   );
 }
