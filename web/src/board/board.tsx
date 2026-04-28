@@ -15,7 +15,7 @@ type BoardData = {
 type BoardColumn = {
     id: string,
     name: string,
-    pipeline: PipelineStep[],
+    pipeline: PipelineKind,
     cards: BoardCard[]
 }
 
@@ -27,10 +27,6 @@ type BoardCard = {
 }
 
 type PipelineKind = 'shell' | 'agent'
-
-type PipelineStep = {
-    kind: PipelineKind
-}
 
 export function Board({ data }: { data: BoardData }) {
     const [columns, setColumns] = useState(data.columns)

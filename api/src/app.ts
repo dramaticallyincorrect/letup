@@ -1,4 +1,8 @@
 import { join } from 'node:path'
+import { config } from 'dotenv'
+
+config({ path: join(__dirname, '../.env') })
+config({ path: join(__dirname, '../.env.local'), override: true })
 import AutoLoad, { AutoloadPluginOptions } from '@fastify/autoload'
 import { FastifyPluginAsync, FastifyServerOptions } from 'fastify'
 

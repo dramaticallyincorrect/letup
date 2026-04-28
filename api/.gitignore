@@ -63,3 +63,8 @@ test/types/index.js
 
 # compiled app
 dist
+**/*.js
+**/*.js.map
+
+# local env
+.env.local
