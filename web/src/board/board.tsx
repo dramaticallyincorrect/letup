@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react"
 import { EllipsisIcon, PlusIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -12,12 +13,14 @@ type BoardData = {
 }
 
 type BoardColumn = {
+    id: string,
     name: string,
     pipeline: PipelineStep[],
     cards: BoardCard[]
 }
 
 type BoardCard = {
+    id: string,
     title: string,
     description: string,
     data: string | null,
@@ -30,30 +33,55 @@ type PipelineStep = {
 }
 
 export function Board({ data }: { data: BoardData }) {
-    return (
-        <div className="flex flex-col h-screen">
-            <div className="flex flex-row gap-3 p-3 overflow-x-auto items-start flex-1 min-h-0">
-                {data.columns.map((col) => (
-                    <ColumnView key={col.name} column={col} />
-                ))}
+    const [columns, setColumns] = useState(data.columns)
 
-                <div className="pl-3 pr-2 py-2.5">
-                    <Button variant='ghost'>
-                        <PlusIcon className="w-4 h-4" />
-                        Add column
-                    </Button>
+    return (
+        <DragDropProvider onDragEnd={(event) => {
+            const { source, target } = event.operation
+            if (!source || !target) return
+
+            const cardId = source.id
+            const targetColumnId = target.id
+            setColumns(cols => {
+                const sourceCol = cols.find(c => c.cards.some(card => card.id === cardId))
+                if (!sourceCol || sourceCol.id === targetColumnId) return cols
+
+                const card = sourceCol.cards.find(c => c.id === cardId)!
+                return cols.map(col => {
+                    if (col.id === sourceCol.id) return { ...col, cards: col.cards.filter(c => c.id !== cardId) }
+                    if (col.id === targetColumnId) return { ...col, cards: [...col.cards, card] }
+                    return col
+                })
+            })
+        }}>
+            <div className="flex flex-col h-screen">
+                <div className="flex flex-row gap-3 p-3 overflow-x-auto items-start flex-1 min-h-0">
+                    {columns.map((col) => (
+                        <ColumnView key={col.id} column={col} />
+                    ))}
+
+                    <div className="pl-3 pr-2 py-2.5">
+                        <Button variant='ghost'>
+                            <PlusIcon className="w-4 h-4" />
+                            Add column
+                        </Button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </DragDropProvider>
     )
 }
 
 function ColumnView({ column }: { column: BoardColumn }) {
     const [open, setOpen] = useState(false)
 
+    const { ref, isDropTarget } = useDroppable({
+        id: column.id
+    });
+
     return (
         <>
-            <div className="flex flex-col w-64 shrink-0 rounded-xl max-h-full">
+            <div ref={ref} className="flex flex-col w-64 shrink-0 rounded-xl max-h-full">
                 <div className="flex items-center justify-between pl-3 pr-2 py-2.5 bg-muted mb-2 rounded-2xl">
                     <span className="font-semibold text-sm">{column.name}</span>
                     <div className="flex items-center gap-0.5">
@@ -65,7 +93,7 @@ function ColumnView({ column }: { column: BoardColumn }) {
                         </Button>
                     </div>
                 </div>
-                <div className="flex flex-col gap-2 p-2 pb-2 overflow-y-auto bg-muted rounded-xl">
+                <div className={`flex flex-col gap-2 p-2 pb-2 overflow-y-auto rounded-xl transition-colors bg-muted ${isDropTarget ? 'ring-2 ring-primary/30' : ''}`}>
                     {column.cards.map((card) => (
                         <Card key={card.title} card={card} />
                     ))}
@@ -108,8 +136,12 @@ function AddCardDialog({ open, onOpenChange, columnName }: { open: boolean, onOp
 }
 
 function Card({ card }: { card: BoardCard }) {
+    const { ref } = useDraggable({
+        id: card.id
+    })
+
     return (
-        <div className="rounded-xl bg-background shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+        <div ref={ref} className="rounded-xl bg-background shadow-sm cursor-pointer hover:shadow-md transition-shadow">
             <div className="p-3">
                 <p className="text-sm font-medium text-foreground leading-snug">{card.title}</p>
                 {card.description && (
