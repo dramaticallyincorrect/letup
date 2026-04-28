@@ -4,7 +4,7 @@
     {
       "name": "frontend",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "frontend", "dev"],
+      "runtimeArgs": ["--filter", "web", "dev"],
       "port": 5173
     },
     {
