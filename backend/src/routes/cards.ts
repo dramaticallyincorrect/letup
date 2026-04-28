@@ -18,6 +18,10 @@ const MoveCard = z.object({
   position: z.number().int().min(0),
 });
 
+const PatchMetadata = z.object({
+  patch: z.record(z.unknown()),
+});
+
 export async function cardRoutes(app: FastifyInstance) {
   const db = getDb();
 
@@ -107,6 +111,32 @@ export async function cardRoutes(app: FastifyInstance) {
         ).run(columnId, position, req.params.id);
       });
       tx();
+
+      return db.prepare("SELECT * FROM cards WHERE id = ?").get(req.params.id);
+    }
+  );
+
+  app.patch<{ Params: { id: string } }>(
+    "/api/cards/:id/metadata",
+    async (req, reply) => {
+      const { patch } = PatchMetadata.parse(req.body);
+      const card = db.prepare("SELECT * FROM cards WHERE id = ?").get(req.params.id) as
+        | { metadata_json: string }
+        | undefined;
+      if (!card) return reply.status(404).send({ error: "Card not found" });
+
+      const current = (() => {
+        try {
+          return JSON.parse(card.metadata_json || "{}") as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })();
+
+      db.prepare("UPDATE cards SET metadata_json = ? WHERE id = ?").run(
+        JSON.stringify({ ...current, ...patch }),
+        req.params.id
+      );
 
       return db.prepare("SELECT * FROM cards WHERE id = ?").get(req.params.id);
     }

@@ -1,8 +1,21 @@
+export type SetupStatus = "idle" | "running" | "success" | "failed";
+
+export interface BoardParam {
+  key: string;
+  label: string;
+  description: string;
+  type: "string" | "secret";
+  required: boolean;
+}
+
 export interface Board {
   id: string;
   name: string;
   workspace_path: string;
   created_at: string;
+  parameters_json: string;       // JSON array of BoardParam
+  setup_pipeline_json: string | null;
+  setup_status: SetupStatus;
 }
 
 export interface Column {
@@ -19,6 +32,7 @@ export interface Card {
   title: string;
   description: string;
   metadata_json: string;
+  renderer_js: string | null;
   position: number;
   created_at: string;
 }
@@ -27,6 +41,7 @@ export interface Pipeline {
   id: string;
   column_id: string;
   definition_json: string;
+  renderer_js: string | null;
   created_at: string;
 }
 

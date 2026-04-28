@@ -22,6 +22,9 @@ import type { Column, Card, Pipeline, MissingParam } from "../api/types";
 import { PipelineEditor } from "../components/PipelineEditor";
 import { ParameterForm } from "../components/ParameterForm";
 import { ExecutionDrawer, ExecutionStatusDot } from "../components/ExecutionDrawer";
+import { BoardSetupView } from "../components/BoardSetupView";
+import { BoardSettingsModal } from "../components/BoardSettingsModal";
+import { CardContentRenderer } from "../components/CardRenderer";
 import type { ExecutionStatus } from "../api/types";
 
 // ─── SortableCard ─────────────────────────────────────────────────────────────
@@ -31,11 +34,15 @@ function SortableCard({
   onDelete,
   executionStatus,
   onOpenExecution,
+  rendererJs,
+  onUpdateMetadata,
 }: {
   card: Card;
   onDelete: (id: string) => void;
   executionStatus?: ExecutionStatus;
   onOpenExecution?: () => void;
+  rendererJs?: string | null;
+  onUpdateMetadata: (cardId: string, patch: object) => Promise<void>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: card.id, data: { type: "card", card } });
@@ -76,6 +83,11 @@ function SortableCard({
       {card.description && (
         <p className="text-xs text-gray-500 mt-1 line-clamp-2">{card.description}</p>
       )}
+      <CardContentRenderer
+        card={card}
+        rendererJs={rendererJs}
+        updateMetadata={(patch) => onUpdateMetadata(card.id, patch)}
+      />
     </div>
   );
 }
@@ -102,6 +114,7 @@ function ColumnView({
   isOver,
   cardExecutionStatuses,
   onOpenExecution,
+  onUpdateMetadata,
 }: {
   column: Column;
   cards: Card[];
@@ -114,6 +127,7 @@ function ColumnView({
   isOver: boolean;
   cardExecutionStatuses: Record<string, { status: ExecutionStatus; executionId: string }>;
   onOpenExecution: (executionId: string) => void;
+  onUpdateMetadata: (cardId: string, patch: object) => Promise<void>;
 }) {
   const [addingCard, setAddingCard] = useState(false);
   const [newCardTitle, setNewCardTitle] = useState("");
@@ -204,6 +218,8 @@ function ColumnView({
                 onDelete={onDeleteCard}
                 executionStatus={exec?.status}
                 onOpenExecution={exec ? () => onOpenExecution(exec.executionId) : undefined}
+                rendererJs={pipeline?.renderer_js}
+                onUpdateMetadata={onUpdateMetadata}
               />
             );
           })}
@@ -275,6 +291,7 @@ export function BoardPage() {
     queryFn: () => api.pipelines.listByBoard(boardId),
   });
 
+  const [showSettings, setShowSettings] = useState(false);
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColName, setNewColName] = useState("");
   const [activeCard, setActiveCard] = useState<Card | null>(null);
@@ -323,6 +340,12 @@ export function BoardPage() {
 
   const deleteCardMutation = useMutation({
     mutationFn: api.cards.delete,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cards", boardId] }),
+  });
+
+  const updateMetadataMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: object }) =>
+      api.cards.patchMetadata(id, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cards", boardId] }),
   });
 
@@ -423,6 +446,7 @@ export function BoardPage() {
           [cardId]: { status: finalStatus, executionId },
         }));
         source.close();
+        qc.invalidateQueries({ queryKey: ["cards", boardId] });
       });
       source.onerror = () => {
         setCardExecutionStatuses((prev) => ({
@@ -462,10 +486,36 @@ export function BoardPage() {
     }
   };
 
+  // Gate: if board has a setup pipeline and it hasn't completed, show setup view
+  if (board && board.setup_pipeline_json && board.setup_status !== "success") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 flex items-center justify-between">
+          <h1 className="text-xl font-bold text-gray-900">{board.name}</h1>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <BoardSetupView
+            board={board}
+            onSetupComplete={() => qc.invalidateQueries({ queryKey: ["board", boardId] })}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
+      <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">{board?.name ?? "…"}</h1>
+        {board && (
+          <button
+            onClick={() => setShowSettings(true)}
+            title="Board settings"
+            className="text-gray-400 hover:text-gray-600 text-sm px-2 py-1 rounded hover:bg-gray-100"
+          >
+            ⚙
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-x-auto p-6">
@@ -494,6 +544,9 @@ export function BoardPage() {
                   onOpenPipeline={(columnId) => setPipelineEditorColumnId(columnId)}
                   cardExecutionStatuses={cardExecutionStatuses}
                   onOpenExecution={(execId) => setOpenExecutionId(execId)}
+                  onUpdateMetadata={(cardId, patch) =>
+                    updateMetadataMutation.mutateAsync({ id: cardId, patch }).then(() => {})
+                  }
                 />
               ))}
             </SortableContext>
@@ -561,6 +614,13 @@ export function BoardPage() {
         <ExecutionDrawer
           executionId={openExecutionId}
           onClose={() => setOpenExecutionId(null)}
+        />
+      )}
+
+      {showSettings && board && (
+        <BoardSettingsModal
+          board={board}
+          onClose={() => setShowSettings(false)}
         />
       )}
     </div>

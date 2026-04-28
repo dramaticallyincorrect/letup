@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { getDb } from "../db/client.js";
 import { runShellPipeline } from "./shell.js";
+import { runAgentPipeline } from "./agent.js";
 import { PipelineDefinitionSchema } from "../pipelines/schema.js";
 import { resolveEnv } from "../parameters/store.js";
 import type { MissingParam } from "../parameters/store.js";
@@ -65,8 +66,15 @@ export async function triggerExecution(
         ).run(executionId);
         emitDone(executionId);
       });
+    } else if (pipeline.type === "agent") {
+      runAgentPipeline(executionId, pipeline, column.workspace_path, env, cardId).catch((err) => {
+        console.error("Agent execution error:", err);
+        db.prepare(
+          "UPDATE executions SET status = 'failed', finished_at = datetime('now') WHERE id = ?"
+        ).run(executionId);
+        emitDone(executionId);
+      });
     }
-    // agent type handled in Phase 5
   });
 
   return { executionId };
