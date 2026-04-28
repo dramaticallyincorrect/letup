@@ -1,10 +1,11 @@
 {
-  "name": "ai-pipeline-board",
+  "name": "my-new-idea",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n backend,frontend -c blue,green \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\"",
-    "build": "pnpm --filter backend build && pnpm --filter frontend build",
-    "typecheck": "pnpm --filter backend typecheck && pnpm --filter frontend typecheck"
+    "build": "pnpm --filter api build && pnpm --filter web build",
+    "typecheck": "pnpm --filter api typecheck && pnpm --filter web typecheck",
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
