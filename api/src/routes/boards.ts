@@ -1,8 +1,45 @@
 import { type FastifyPluginAsync } from 'fastify'
-import { columns, columnCommands, boards as boardsTable } from '../db/schema'
-import { eq, max } from 'drizzle-orm'
+import { columns, columnCommands, boards as boardsTable, cards } from '../db/schema'
+import { eq, max, asc } from 'drizzle-orm'
 
 const boards: FastifyPluginAsync = async (fastify): Promise<void> => {
+  fastify.get('/boards', {
+    schema: { tags: ['Boards'], summary: 'List all boards' },
+  }, async (_request, reply) => {
+    const result = await fastify.db.select().from(boardsTable)
+    return reply.send(result)
+  })
+
+  fastify.get<{ Params: { boardId: string } }>('/boards/:boardId', {
+    schema: { tags: ['Boards'], summary: 'Get a board' },
+  }, async (request, reply) => {
+    const { boardId } = request.params
+
+    const [board] = await fastify.db.select().from(boardsTable).where(eq(boardsTable.id, boardId))
+    if (!board) return reply.code(404).send({ error: 'Board not found' })
+
+    const boardColumns = await fastify.db
+      .select().from(columns)
+      .where(eq(columns.boardId, boardId))
+      .orderBy(asc(columns.position))
+
+    const allCards = boardColumns.length
+      ? await Promise.all(
+        boardColumns.map(col =>
+          fastify.db.select().from(cards).where(eq(cards.columnId, col.id)).orderBy(asc(cards.position))
+        )
+      )
+      : []
+
+    return reply.send({
+      ...board,
+      columns: boardColumns.map((col, i) => ({
+        ...col,
+        cards: allCards[i] ?? [],
+      })),
+    })
+  })
+
   fastify.post<{
     Body: {
       name: string
@@ -30,6 +67,13 @@ const boards: FastifyPluginAsync = async (fastify): Promise<void> => {
           name
         })
         .returning()
+
+
+      await tx.insert(columns).values({
+        boardId: createdBoard[0].id,
+        name: 'To Do',
+        position: 0,
+      })
 
       return createdBoard[0]
     })

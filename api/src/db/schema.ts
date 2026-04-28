@@ -14,7 +14,7 @@ export const columns = pgTable('board_columns', {
   boardId: uuid('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   position: integer('position').notNull(),
-  pipelineKind: pipelineKindEnum('pipeline_kind').notNull(),
+  pipelineKind: pipelineKindEnum('pipeline_kind'),
   // used when pipelineKind = 'agent'
   prompt: text('prompt'),
   createdAt: timestamp('created_at').defaultNow().notNull(),

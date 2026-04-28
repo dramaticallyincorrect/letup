@@ -1,0 +1,1 @@
+ALTER TABLE "board_columns" ALTER COLUMN "pipeline_kind" DROP NOT NULL;

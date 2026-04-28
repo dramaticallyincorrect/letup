@@ -6,6 +6,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react"
 import { EllipsisIcon, PlusIcon } from "lucide-react"
 import { useState } from "react"
+import { useParams } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
+import * as client from "@repo/data"
 
 type BoardData = {
     name: string,
@@ -15,7 +18,7 @@ type BoardData = {
 type BoardColumn = {
     id: string,
     name: string,
-    pipeline: PipelineKind,
+    pipeline?: PipelineKind,
     cards: BoardCard[]
 }
 
@@ -75,6 +78,7 @@ function ColumnView({ column }: { column: BoardColumn }) {
         id: column.id
     });
 
+
     return (
         <>
             <div ref={ref} className="flex flex-col w-64 shrink-0 rounded-xl max-h-full">
@@ -89,7 +93,7 @@ function ColumnView({ column }: { column: BoardColumn }) {
                         </Button>
                     </div>
                 </div>
-                <div className={`flex flex-col gap-2 p-2 pb-2 overflow-y-auto rounded-xl transition-colors bg-muted ${isDropTarget ? 'ring-2 ring-primary/30' : ''}`}>
+                <div className={`flex flex-col gap-2 p-2 pb-2 overflow-y-auto rounded-xl transition-colors bg-muted ${isDropTarget ? 'ring-2 ring-primary/30' : ''}`} hidden={column.cards.length == 0}>
                     {column.cards.map((card) => (
                         <Card key={card.title} card={card} />
                     ))}
@@ -147,5 +151,33 @@ function Card({ card }: { card: BoardCard }) {
                 )}
             </div>
         </div>
+    )
+}
+
+export function BoardPage() {
+    const { boardId } = useParams({ from: '/boards/$boardId' })
+    const { data, isPending, isError } = useQuery({
+        queryKey: ['board', boardId],
+        queryFn: () => client.getBoard(boardId),
+    })
+
+    if (isPending) return <p className="p-6 text-muted-foreground">Loading board...</p>
+    if (isError) return <p className="p-6 text-destructive">Failed to load board.</p>
+
+    return (
+        <Board data={{
+            name: data.name,
+            columns: data.columns.map(col => ({
+                id: col.id,
+                name: col.name,
+                pipeline: col.pipelineKind,
+                cards: col.cards.map(card => ({
+                    id: card.id,
+                    title: card.title,
+                    description: card.description,
+                    data: card.data as string | null,
+                })),
+            })),
+        }} />
     )
 }

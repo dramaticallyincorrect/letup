@@ -4,6 +4,7 @@ import { config } from 'dotenv'
 config({ path: join(__dirname, '../.env') })
 config({ path: join(__dirname, '../.env.local'), override: true })
 import AutoLoad, { AutoloadPluginOptions } from '@fastify/autoload'
+import cors from '@fastify/cors'
 import { FastifyPluginAsync, FastifyServerOptions } from 'fastify'
 
 export interface AppOptions extends FastifyServerOptions, Partial<AutoloadPluginOptions> {
@@ -17,7 +18,7 @@ const app: FastifyPluginAsync<AppOptions> = async (
   fastify,
   opts
 ): Promise<void> => {
-  // Place here your custom code!
+  await fastify.register(cors, { origin: true })
 
   // Do not touch the following lines
 
