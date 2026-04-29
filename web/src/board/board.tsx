@@ -4,12 +4,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react"
-import { EllipsisIcon, PlusIcon } from "lucide-react"
+import { EllipsisIcon, LoaderCircle, PlusIcon } from "lucide-react"
 import { useState } from "react"
 import { flushSync } from "react-dom"
 import { useParams } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import * as client from "@repo/data"
+
+const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+
+
 
 type BoardData = {
     name: string,
@@ -34,6 +38,31 @@ type PipelineKind = 'shell' | 'agent'
 
 export function Board({ boardId: boardId, data }: { boardId: string, data: BoardData }) {
     const [columns, setColumns] = useState(data.columns)
+
+    async function handleAddColumn(name: string, prompt: string): Promise<void> {
+        const res = await fetch(`${apiBaseUrl}/boards/${boardId}/columns`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, prompt }),
+        })
+        if (!res.ok || !res.body) throw new Error(`Failed to add column: ${res.status}`)
+
+        const reader = res.body.getReader()
+
+        return new Promise<void>((resolve, reject) => {
+            async function process() {
+                for await (const { event, data } of client.parseSSE(reader)) {
+                    if (event === 'column') {
+                        setColumns(cols => [...cols, { ...data, cards: [] }])
+                        resolve()
+                    } else if (event === 'error') {
+                        reject(new Error(data.message ?? 'Agent error'))
+                    }
+                }
+            }
+            process().catch(err => reject(err))
+        })
+    }
 
     function handleCardAdded(columnId: string, card: BoardCard) {
         setColumns(cols => cols.map(col =>
@@ -71,20 +100,22 @@ export function Board({ boardId: boardId, data }: { boardId: string, data: Board
                         <ColumnView key={col.id} column={col} onCardAdded={handleCardAdded} />
                     ))}
 
-                    <AddColumnDialog boardId={boardId} onColumnAdded={(col) => setColumns(cols => [...cols, { ...col, cards: [] }])} />
+                    <AddColumnDialog onSubmit={handleAddColumn} />
                 </div>
             </div>
         </DragDropProvider>
     )
 }
 
-function ColumnView({ column, onCardAdded }: { column: BoardColumn, onCardAdded: (columnId: string, card: BoardCard) => void }) {
+function ColumnView({ column, onCardAdded }: {
+    column: BoardColumn
+    onCardAdded: (columnId: string, card: BoardCard) => void
+}) {
     const [open, setOpen] = useState(false)
 
     const { ref, isDropTarget } = useDroppable({
         id: column.id
     });
-
 
     return (
         <>
@@ -181,23 +212,26 @@ function AddCardDialog({ open, onOpenChange, columnId, columnName, onCardAdded }
     )
 }
 
-function AddColumnDialog({ boardId, onColumnAdded }: {
-    boardId: string
-    onColumnAdded: (col: Omit<BoardColumn, 'cards'>) => void
+function AddColumnDialog({ onSubmit }: {
+    onSubmit: (name: string, prompt: string) => Promise<void>
 }) {
     const [open, setOpen] = useState(false)
     const [name, setName] = useState('')
     const [prompt, setPrompt] = useState('')
+    const [isAdding, setIsAdding] = useState(false)
 
-    const mutation = useMutation({
-        mutationFn: () => client.addColumn(boardId, { name, prompt }),
-        onSuccess: (col) => {
-            onColumnAdded(col)
+    async function handleSubmit() {
+        if (!name.trim() || isAdding) return
+        setIsAdding(true)
+        try {
+            await onSubmit(name, prompt)
             setName('')
             setPrompt('')
             setOpen(false)
-        },
-    })
+        } finally {
+            setIsAdding(false)
+        }
+    }
 
     return (
         <>
@@ -208,7 +242,7 @@ function AddColumnDialog({ boardId, onColumnAdded }: {
                 </Button>
             </div>
 
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(o) => { if (!isAdding) setOpen(o) }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>Add column</DialogTitle>
@@ -221,6 +255,7 @@ function AddColumnDialog({ boardId, onColumnAdded }: {
                                 placeholder="Column name…"
                                 value={name}
                                 onChange={e => setName(e.target.value)}
+                                disabled={isAdding}
                             />
                         </div>
                         <div className="flex flex-col gap-2">
@@ -231,13 +266,14 @@ function AddColumnDialog({ boardId, onColumnAdded }: {
                                 className="min-h-28 resize-none"
                                 value={prompt}
                                 onChange={e => setPrompt(e.target.value)}
+                                disabled={isAdding}
                             />
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                        <Button onClick={() => mutation.mutate()} disabled={!name.trim() || mutation.isPending}>
-                            {mutation.isPending ? 'Adding…' : 'Add column'}
+                        <Button variant="outline" onClick={() => setOpen(false)} disabled={isAdding}>Cancel</Button>
+                        <Button onClick={handleSubmit} disabled={!name.trim() || isAdding} className="min-w-26">
+                            {isAdding ? <LoaderCircle className="animate-spin" /> : 'Add column'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
