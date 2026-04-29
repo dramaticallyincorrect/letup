@@ -1,10 +1,9 @@
 # round 1 - core
 
 1. add column
-2. add cards
+2. ~~add cards~~
    1. title
    2. description
-   3. data
 3. move cards
 
 

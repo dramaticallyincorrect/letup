@@ -34,7 +34,6 @@ export const cards = pgTable('cards', {
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
   data: jsonb('data'),
-  position: integer('position').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

@@ -15,6 +15,13 @@
       "when": 1777419505465,
       "tag": "0001_deep_mordo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777466185925,
+      "tag": "0002_icy_rawhide_kid",
+      "breakpoints": true
     }
   ]
 }

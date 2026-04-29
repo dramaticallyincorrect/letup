@@ -15,6 +15,11 @@ export type Board = {
   createdAt: string
 }
 
+export type Card = {
+  title: string,
+  description: string
+}
+
 export type BoardCard = {
   id: string
   title: string
@@ -49,6 +54,14 @@ export async function createBoard(name: string): Promise<Board> {
   const res = await apiFetch('/boards', {
     method: 'POST',
     body: JSON.stringify({ name }),
+  })
+  return res.json()
+}
+
+export async function addCardToBoard(columnId: string, card: Card): Promise<Card> {
+  const res = await apiFetch(`/columns/${columnId}`, {
+    method: 'POST',
+    body: JSON.stringify(card),
   })
   return res.json()
 }

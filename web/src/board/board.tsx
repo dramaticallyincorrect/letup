@@ -7,7 +7,7 @@ import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react"
 import { EllipsisIcon, PlusIcon } from "lucide-react"
 import { useState } from "react"
 import { useParams } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import * as client from "@repo/data"
 
 type BoardData = {
@@ -31,8 +31,14 @@ type BoardCard = {
 
 type PipelineKind = 'shell' | 'agent'
 
-export function Board({ data }: { data: BoardData }) {
+export function Board({ boardId, data }: { boardId: string, data: BoardData }) {
     const [columns, setColumns] = useState(data.columns)
+
+    function handleCardAdded(columnId: string, card: BoardCard) {
+        setColumns(cols => cols.map(col =>
+            col.id === columnId ? { ...col, cards: [...col.cards, card] } : col
+        ))
+    }
 
     return (
         <DragDropProvider onDragEnd={(event) => {
@@ -56,7 +62,7 @@ export function Board({ data }: { data: BoardData }) {
             <div className="flex flex-col h-screen">
                 <div className="flex flex-row gap-3 p-3 overflow-x-auto items-start flex-1 min-h-0">
                     {columns.map((col) => (
-                        <ColumnView key={col.id} column={col} />
+                        <ColumnView key={col.id} column={col} onCardAdded={handleCardAdded} />
                     ))}
 
                     <div className="pl-3 pr-2 py-2.5">
@@ -71,7 +77,7 @@ export function Board({ data }: { data: BoardData }) {
     )
 }
 
-function ColumnView({ column }: { column: BoardColumn }) {
+function ColumnView({ column, onCardAdded }: { column: BoardColumn, onCardAdded: (columnId: string, card: BoardCard) => void }) {
     const [open, setOpen] = useState(false)
 
     const { ref, isDropTarget } = useDroppable({
@@ -95,17 +101,47 @@ function ColumnView({ column }: { column: BoardColumn }) {
                 </div>
                 <div className={`flex flex-col gap-2 p-2 pb-2 overflow-y-auto rounded-xl transition-colors bg-muted ${isDropTarget ? 'ring-2 ring-primary/30' : ''}`} hidden={column.cards.length == 0}>
                     {column.cards.map((card) => (
-                        <Card key={card.title} card={card} />
+                        <Card key={card.id} card={card} />
                     ))}
                 </div>
             </div>
 
-            <AddCardDialog open={open} onOpenChange={setOpen} columnName={column.name} />
+            <AddCardDialog
+                open={open}
+                onOpenChange={setOpen}
+                columnId={column.id}
+                columnName={column.name}
+                onCardAdded={(card) => onCardAdded(column.id, card)}
+            />
         </>
     )
 }
 
-function AddCardDialog({ open, onOpenChange, columnName }: { open: boolean, onOpenChange: (open: boolean) => void, columnName: string }) {
+function AddCardDialog({ open, onOpenChange, columnId, columnName, onCardAdded }: {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+    columnId: string
+    columnName: string
+    onCardAdded: (card: BoardCard) => void
+}) {
+    const [title, setTitle] = useState('')
+    const [description, setDescription] = useState('')
+
+    const mutation = useMutation({
+        mutationFn: () => client.addCardToBoard(columnId, { title, description }),
+        onSuccess: (card) => {
+            onCardAdded(card as unknown as BoardCard)
+            setTitle('')
+            setDescription('')
+            onOpenChange(false)
+        },
+    })
+
+    function handleSubmit() {
+        if (!title.trim()) return
+        mutation.mutate()
+    }
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-md">
@@ -115,7 +151,12 @@ function AddCardDialog({ open, onOpenChange, columnName }: { open: boolean, onOp
                 <div className="flex flex-col gap-5 py-2">
                     <div className="flex flex-col gap-2">
                         <Label htmlFor="card-title">Title</Label>
-                        <Input id="card-title" placeholder="Enter a title…" />
+                        <Input
+                            id="card-title"
+                            placeholder="Enter a title…"
+                            value={title}
+                            onChange={e => setTitle(e.target.value)}
+                        />
                     </div>
                     <div className="flex flex-col gap-2">
                         <Label htmlFor="card-description">Description</Label>
@@ -123,12 +164,16 @@ function AddCardDialog({ open, onOpenChange, columnName }: { open: boolean, onOp
                             id="card-description"
                             placeholder="Add a more detailed description…"
                             className="min-h-36 resize-none"
+                            value={description}
+                            onChange={e => setDescription(e.target.value)}
                         />
                     </div>
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-                    <Button>Add card</Button>
+                    <Button onClick={handleSubmit} disabled={!title.trim() || mutation.isPending}>
+                        {mutation.isPending ? 'Adding…' : 'Add card'}
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -165,7 +210,7 @@ export function BoardPage() {
     if (isError) return <p className="p-6 text-destructive">Failed to load board.</p>
 
     return (
-        <Board data={{
+        <Board boardId={boardId} data={{
             name: data.name,
             columns: data.columns.map(col => ({
                 id: col.id,
