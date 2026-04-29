@@ -1,5 +1,5 @@
 import { FastifyBaseLogger, FastifyInstance, FastifyTypeProviderDefault, RawServerDefault, type FastifyPluginAsync } from 'fastify'
-import { columns, columnCommands, boards as boardsTable, cards } from '../db/schema'
+import { columns, boards as boardsTable, cards } from '../db/schema'
 import { eq, max, asc } from 'drizzle-orm'
 import { IncomingMessage, ServerResponse } from 'node:http'
 

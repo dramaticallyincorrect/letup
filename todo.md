@@ -4,7 +4,7 @@
 2. ~~add cards~~
    1. title
    2. description
-3. move cards
+3. ~~move cards~~
 
 
 # round 2 - ai integration

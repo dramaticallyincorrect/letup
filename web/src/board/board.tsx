@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react"
 import { EllipsisIcon, PlusIcon } from "lucide-react"
 import { useState } from "react"
+import { flushSync } from "react-dom"
 import { useParams } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import * as client from "@repo/data"
@@ -40,11 +41,9 @@ export function Board({ boardId: boardId, data }: { boardId: string, data: Board
         ))
     }
 
-    const moveMutation = useMutation({
-        mutationFn: ({ cardId, destinationColumnId }: { cardId: string, destinationColumnId: string }) =>
-            client.moveCardToColumn(cardId, destinationColumnId),
-        onMutate: ({ cardId, destinationColumnId }) => {
-            let previous: BoardColumn[] = []
+    function handleCardMoved(cardId: string, destinationColumnId: string) {
+        let previous: BoardColumn[] = []
+        flushSync(() => {
             setColumns(cols => {
                 previous = cols
                 const sourceCol = cols.find(c => c.cards.some(card => card.id === cardId))
@@ -56,22 +55,15 @@ export function Board({ boardId: boardId, data }: { boardId: string, data: Board
                     return col
                 })
             })
-            return { previous }
-        },
-        onError: (_err, _vars, context) => {
-            if (context) setColumns(context.previous)
-        },
-    })
+        })
+        client.moveCardToColumn(cardId, destinationColumnId).catch(() => setColumns(previous))
+    }
 
     return (
         <DragDropProvider onDragEnd={(event) => {
             const { source, target } = event.operation
             if (!source || !target) return
-
-            moveMutation.mutate({
-                cardId: source.id as string,
-                destinationColumnId: target.id as string,
-            })
+            handleCardMoved(source.id as string, target.id as string)
         }}>
             <div className="flex flex-col h-screen">
                 <div className="flex flex-row gap-3 p-3 overflow-x-auto items-start flex-1 min-h-0">
@@ -108,7 +100,7 @@ function ColumnView({ column, onCardAdded }: { column: BoardColumn, onCardAdded:
                         </Button>
                     </div>
                 </div>
-                <div className={`flex flex-col gap-2 p-2 pb-2 overflow-y-auto rounded-xl transition-colors bg-muted ${isDropTarget ? 'ring-2 ring-primary/30' : ''}`} hidden={column.cards.length == 0}>
+                <div className={`flex flex-col gap-2 p-2 pb-2 overflow-y-auto rounded-xl transition-colors bg-muted ${isDropTarget ? 'ring-2 ring-primary/30' : ''} ${column.cards.length === 0 ? 'min-h-24' : ''}`}>
                     {column.cards.map((card) => (
                         <Card key={card.id} card={card} />
                     ))}
