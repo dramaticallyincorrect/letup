@@ -1,6 +1,6 @@
 # round 1 - core
 
-1. add column
+1. ~~add column~~
 2. ~~add cards~~
    1. title
    2. description

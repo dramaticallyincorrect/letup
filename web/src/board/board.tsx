@@ -31,7 +31,7 @@ type BoardCard = {
 
 type PipelineKind = 'shell' | 'agent'
 
-export function Board({ boardId, data }: { boardId: string, data: BoardData }) {
+export function Board({ boardId: boardId, data }: { boardId: string, data: BoardData }) {
     const [columns, setColumns] = useState(data.columns)
 
     function handleCardAdded(columnId: string, card: BoardCard) {
@@ -40,23 +40,37 @@ export function Board({ boardId, data }: { boardId: string, data: BoardData }) {
         ))
     }
 
+    const moveMutation = useMutation({
+        mutationFn: ({ cardId, destinationColumnId }: { cardId: string, destinationColumnId: string }) =>
+            client.moveCardToColumn(cardId, destinationColumnId),
+        onMutate: ({ cardId, destinationColumnId }) => {
+            let previous: BoardColumn[] = []
+            setColumns(cols => {
+                previous = cols
+                const sourceCol = cols.find(c => c.cards.some(card => card.id === cardId))
+                if (!sourceCol || sourceCol.id === destinationColumnId) return cols
+                const card = sourceCol.cards.find(c => c.id === cardId)!
+                return cols.map(col => {
+                    if (col.id === sourceCol.id) return { ...col, cards: col.cards.filter(c => c.id !== cardId) }
+                    if (col.id === destinationColumnId) return { ...col, cards: [...col.cards, card] }
+                    return col
+                })
+            })
+            return { previous }
+        },
+        onError: (_err, _vars, context) => {
+            if (context) setColumns(context.previous)
+        },
+    })
+
     return (
         <DragDropProvider onDragEnd={(event) => {
             const { source, target } = event.operation
             if (!source || !target) return
 
-            const cardId = source.id
-            const targetColumnId = target.id
-            setColumns(cols => {
-                const sourceCol = cols.find(c => c.cards.some(card => card.id === cardId))
-                if (!sourceCol || sourceCol.id === targetColumnId) return cols
-
-                const card = sourceCol.cards.find(c => c.id === cardId)!
-                return cols.map(col => {
-                    if (col.id === sourceCol.id) return { ...col, cards: col.cards.filter(c => c.id !== cardId) }
-                    if (col.id === targetColumnId) return { ...col, cards: [...col.cards, card] }
-                    return col
-                })
+            moveMutation.mutate({
+                cardId: source.id as string,
+                destinationColumnId: target.id as string,
             })
         }}>
             <div className="flex flex-col h-screen">
@@ -65,12 +79,7 @@ export function Board({ boardId, data }: { boardId: string, data: BoardData }) {
                         <ColumnView key={col.id} column={col} onCardAdded={handleCardAdded} />
                     ))}
 
-                    <div className="pl-3 pr-2 py-2.5">
-                        <Button variant='ghost'>
-                            <PlusIcon className="w-4 h-4" />
-                            Add column
-                        </Button>
-                    </div>
+                    <AddColumnDialog boardId={boardId} onColumnAdded={(col) => setColumns(cols => [...cols, { ...col, cards: [] }])} />
                 </div>
             </div>
         </DragDropProvider>
@@ -177,6 +186,71 @@ function AddCardDialog({ open, onOpenChange, columnId, columnName, onCardAdded }
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+    )
+}
+
+function AddColumnDialog({ boardId, onColumnAdded }: {
+    boardId: string
+    onColumnAdded: (col: Omit<BoardColumn, 'cards'>) => void
+}) {
+    const [open, setOpen] = useState(false)
+    const [name, setName] = useState('')
+    const [prompt, setPrompt] = useState('')
+
+    const mutation = useMutation({
+        mutationFn: () => client.addColumn(boardId, { name, prompt }),
+        onSuccess: (col) => {
+            onColumnAdded(col)
+            setName('')
+            setPrompt('')
+            setOpen(false)
+        },
+    })
+
+    return (
+        <>
+            <div className="pl-3 pr-2 py-2.5 shrink-0">
+                <Button variant='ghost' onClick={() => setOpen(true)}>
+                    <PlusIcon className="w-4 h-4" />
+                    Add column
+                </Button>
+            </div>
+
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Add column</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-5 py-2">
+                        <div className="flex flex-col gap-2">
+                            <Label htmlFor="col-name">Name</Label>
+                            <Input
+                                id="col-name"
+                                placeholder="Column name…"
+                                value={name}
+                                onChange={e => setName(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <Label htmlFor="col-prompt">Prompt</Label>
+                            <Textarea
+                                id="col-prompt"
+                                placeholder="Instructions for the agent…"
+                                className="min-h-28 resize-none"
+                                value={prompt}
+                                onChange={e => setPrompt(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                        <Button onClick={() => mutation.mutate()} disabled={!name.trim() || mutation.isPending}>
+                            {mutation.isPending ? 'Adding…' : 'Add column'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     )
 }
 

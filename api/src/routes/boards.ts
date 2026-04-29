@@ -16,6 +16,7 @@ const boards: FastifyPluginAsync = async (fastify): Promise<void> => {
 
   addColumn(fastify)
   addCard(fastify)
+  moveCard(fastify)
 }
 
 function getAllBoards(fastify: Fastify) {
@@ -118,9 +119,7 @@ function addColumn(fastify: Fastify) {
     Params: { boardId: string }
     Body: {
       name: string
-      pipelineKind: 'shell' | 'agent'
-      commands?: string[]
-      prompt?: string
+      prompt: string
     }
   }>('/boards/:boardId/columns', {
     schema: {
@@ -129,7 +128,7 @@ function addColumn(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { boardId } = request.params
-    const { name, pipelineKind, commands, prompt } = request.body
+    const { name, prompt } = request.body
 
     const result = await fastify.db.transaction(async (tx) => {
       const positionResult = await tx
@@ -144,21 +143,11 @@ function addColumn(fastify: Fastify) {
         .values({
           boardId,
           name,
-          pipelineKind,
+          pipelineKind: 'agent',
           prompt: prompt,
           position: nextPosition,
         })
-        .returning()
-
-      if (pipelineKind === 'shell' && commands?.length) {
-        await tx.insert(columnCommands).values(
-          commands.map((command, i) => ({
-            columnId: column.id,
-            command,
-            position: i,
-          }))
-        )
-      }
+        .returning()      
 
       return column
     })
@@ -195,6 +184,32 @@ function addCard(fastify: Fastify) {
     })
 
     return reply.code(201).send(result)
+  })
+}
+
+function moveCard(fastify: Fastify) {
+  fastify.patch<{
+    Params: { cardId: string }
+    Body: {
+      destinationColumnId: string
+    }
+  }>('/cards/:cardId', {
+    schema: {
+      tags: ['Boards'],
+      summary: 'Move card to destination column',
+    },
+  }, async (request, reply) => {
+    const { cardId } = request.params
+
+    // make sure this columnid is for this board
+
+    const result = await fastify.db.transaction(async (tx) => {
+      return tx.update(cards).set({
+        columnId: request.body.destinationColumnId
+      }).where(eq(cards.id, cardId))
+    })
+
+    return reply.code(200).send(result)
   })
 }
 

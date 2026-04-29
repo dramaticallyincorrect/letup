@@ -58,10 +58,31 @@ export async function createBoard(name: string): Promise<Board> {
   return res.json()
 }
 
+export async function addColumn(boardId: string, params: {
+  name: string
+  prompt?: string
+}): Promise<BoardColumn> {
+  const res = await apiFetch(`/boards/${boardId}/columns`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+  return res.json()
+}
+
 export async function addCardToBoard(columnId: string, card: Card): Promise<Card> {
   const res = await apiFetch(`/columns/${columnId}`, {
     method: 'POST',
     body: JSON.stringify(card),
+  })
+  return res.json()
+}
+
+export async function moveCardToColumn(cardId: string, destinationColumnId: string): Promise<void> {
+  const res = await apiFetch(`/cards/${cardId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      destinationColumnId
+    }),
   })
   return res.json()
 }
