@@ -33,6 +33,7 @@ export type BoardColumn = {
   name: string
   pipelineKind: 'shell' | 'agent'
   position: number
+  cardRenderer: string | null
   cards: BoardCard[]
 }
 
@@ -75,6 +76,17 @@ export async function addCardToBoard(columnId: string, card: Card): Promise<Card
     body: JSON.stringify(card),
   })
   return res.json()
+}
+
+export async function deleteColumn(columnId: string): Promise<void> {
+  await fetch(`${baseUrl}/columns/${columnId}`, { method: 'DELETE' })
+}
+
+export async function patchCardMetadata(cardId: string, patch: Record<string, unknown>): Promise<void> {
+  await apiFetch(`/cards/${cardId}/metadata`, {
+    method: 'PATCH',
+    body: JSON.stringify({ patch }),
+  })
 }
 
 export async function moveCardToColumn(cardId: string, destinationColumnId: string): Promise<void> {

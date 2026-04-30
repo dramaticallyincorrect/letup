@@ -17,6 +17,8 @@ export const columns = pgTable('board_columns', {
   pipelineKind: pipelineKindEnum('pipeline_kind'),
   // used when pipelineKind = 'agent'
   prompt: text('prompt'),
+  dataSchema: jsonb('data_schema'),
+  cardRenderer: text('card_renderer'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
