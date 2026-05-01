@@ -1,24 +1,11 @@
-# round 2 - ai integration
+# idea
 
-1. run ai pipeline
-   1. stream status/logs
-2. column inputs
-3. ai tools
-   1. set data
-   2. move card
-   
+user created apps
 
-# round 3 - custom renderer
-
-1. set custom card renderer
-   1. in column
-   2. detail view
+## requirements
+1. once the widget is built if the widget is edited a copy of the widget and it's data should be kept to allow the user to rollback
 
 
-# round 4 - outer
-
-1. boards list
-2. templates
 
 
 # round 5 - infra

@@ -1,0 +1,1 @@
+ALTER TABLE "widgets" ADD COLUMN "source_files" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -9,96 +9,63 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return res
 }
 
-export type Board = {
+export type WidgetStatus = 'draft' | 'published'
+
+export type WidgetSummary = {
   id: string
   name: string
+  description: string
+  status: WidgetStatus
   createdAt: string
+  updatedAt: string
 }
 
-export type Card = {
-  title: string,
-  description: string
+export type Widget = WidgetSummary & {
+  sourceCode: string | null
+  compiledCode: string | null
+  cssCode: string | null
 }
 
-export type BoardCard = {
-  id: string
-  title: string
-  description: string
-  data: unknown
-  position: number
-}
-
-export type BoardColumn = {
-  id: string
-  name: string
-  pipelineKind: 'shell' | 'agent'
-  position: number
-  cardRenderer: string | null
-  cards: BoardCard[]
-}
-
-export type BoardDetail = Board & {
-  columns: BoardColumn[]
-}
-
-export async function getBoards(): Promise<Board[]> {
-  const res = await apiFetch('/boards')
+export async function getWidgets(): Promise<WidgetSummary[]> {
+  const res = await apiFetch('/widgets')
   return res.json()
 }
 
-export async function getBoard(boardId: string): Promise<BoardDetail> {
-  const res = await apiFetch(`/boards/${boardId}`)
+export async function getWidget(widgetId: string): Promise<Widget> {
+  const res = await apiFetch(`/widgets/${widgetId}`)
   return res.json()
 }
 
-export async function createBoard(name: string): Promise<Board> {
-  const res = await apiFetch('/boards', {
+export async function createWidget(name: string): Promise<Widget> {
+  const res = await apiFetch('/widgets', {
     method: 'POST',
     body: JSON.stringify({ name }),
   })
   return res.json()
 }
 
-export async function addColumn(boardId: string, params: {
-  name: string
-  prompt?: string
-}): Promise<BoardColumn> {
-  const res = await apiFetch(`/boards/${boardId}/columns`, {
-    method: 'POST',
-    body: JSON.stringify(params),
-  })
-  return res.json()
-}
-
-export async function addCardToBoard(columnId: string, card: Card): Promise<Card> {
-  const res = await apiFetch(`/columns/${columnId}`, {
-    method: 'POST',
-    body: JSON.stringify(card),
-  })
-  return res.json()
-}
-
-export async function deleteColumn(columnId: string): Promise<void> {
-  await fetch(`${baseUrl}/columns/${columnId}`, { method: 'DELETE' })
-}
-
-export async function patchCardMetadata(cardId: string, patch: Record<string, unknown>): Promise<void> {
-  await apiFetch(`/cards/${cardId}/metadata`, {
+export async function patchWidget(
+  widgetId: string,
+  patch: Partial<Pick<Widget, 'name' | 'description' | 'status'>>
+): Promise<Widget> {
+  const res = await apiFetch(`/widgets/${widgetId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ patch }),
-  })
-}
-
-export async function moveCardToColumn(cardId: string, destinationColumnId: string): Promise<void> {
-  const res = await apiFetch(`/cards/${cardId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      destinationColumnId
-    }),
+    body: JSON.stringify(patch),
   })
   return res.json()
 }
 
+export async function deleteWidget(widgetId: string): Promise<void> {
+  await apiFetch(`/widgets/${widgetId}`, { method: 'DELETE' })
+}
+
+export function buildWidget(widgetId: string, userMessage: string): Promise<Response> {
+  return fetch(`${baseUrl}/widgets/build`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ widgetId, userMessage }),
+  })
+}
 
 export async function* parseSSE(reader: ReadableStreamDefaultReader<Uint8Array>) {
   const decoder = new TextDecoder()

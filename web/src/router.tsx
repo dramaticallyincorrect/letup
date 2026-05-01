@@ -5,8 +5,9 @@ import {
   Outlet,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-import { Boards } from './board/boards'
-import { BoardPage } from './board/board'
+import { WidgetsPage } from './widgets/widgets'
+import { WidgetBuilderPage } from './widgets/widget-builder'
+import { WidgetViewPage } from './widgets/widget-view'
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -17,19 +18,25 @@ const rootRoute = createRootRoute({
   ),
 })
 
-const boardsRoute = createRoute({
+const widgetsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/boards',
-  component: Boards,
+  path: '/widgets',
+  component: WidgetsPage,
 })
 
-const boardRoute = createRoute({
+const widgetBuilderRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/boards/$boardId',
-  component: BoardPage,
+  path: '/widgets/new',
+  component: WidgetBuilderPage,
 })
 
-const routeTree = rootRoute.addChildren([boardsRoute, boardRoute])
+const widgetViewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/widgets/$widgetId',
+  component: WidgetViewPage,
+})
+
+const routeTree = rootRoute.addChildren([widgetsRoute, widgetBuilderRoute, widgetViewRoute])
 
 export const router = createRouter({
   routeTree,

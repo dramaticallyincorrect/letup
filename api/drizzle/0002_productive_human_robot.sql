@@ -1,0 +1,1 @@
+ALTER TABLE "widgets" ADD COLUMN "css_code" text;
