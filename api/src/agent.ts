@@ -38,7 +38,7 @@ export async function runAgentLoop(params: {
     messages,
     tools = [],
     system,
-    model = 'claude-haiku-4-5',
+    model = 'claude-sonnet-4-6',
     maxTokens = 16000,
     thinking,
     onText,

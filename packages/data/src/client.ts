@@ -67,6 +67,13 @@ export function buildWidget(widgetId: string, userMessage: string): Promise<Resp
   })
 }
 
+export async function answerWidgetQuestion(questionId: string, answer: string): Promise<void> {
+  await apiFetch('/widgets/answer', {
+    method: 'POST',
+    body: JSON.stringify({ questionId, answer }),
+  })
+}
+
 export async function* parseSSE(reader: ReadableStreamDefaultReader<Uint8Array>) {
   const decoder = new TextDecoder()
   let buffer = ''

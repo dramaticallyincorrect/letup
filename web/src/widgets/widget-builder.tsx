@@ -7,6 +7,7 @@ type ChatMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; streaming: boolean }
   | { role: 'tool'; name: string }
+  | { role: 'question'; questionId: string; question: string; answered: boolean }
 
 type PreviewTab = 'preview' | 'source'
 
@@ -20,6 +21,7 @@ export function WidgetBuilderPage() {
   const [sourceCode, setSourceCode] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [inputValue, setInputValue] = useState('')
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
   const [previewTab, setPreviewTab] = useState<PreviewTab>('preview')
   const [initError, setInitError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -77,6 +79,9 @@ export function WidgetBuilderPage() {
             }
             return next
           })
+        } else if (event === 'user_question') {
+          const { questionId, question } = data as { questionId: string; question: string }
+          setMessages(prev => [...prev, { role: 'question', questionId, question, answered: false }])
         } else if (event === 'error') {
           setMessages(prev => {
             const next = [...prev]
@@ -113,6 +118,17 @@ export function WidgetBuilderPage() {
       e.preventDefault()
       handleSend()
     }
+  }
+
+  async function handleAnswerQuestion(questionId: string) {
+    const answer = (questionAnswers[questionId] ?? '').trim()
+    if (!answer) return
+    setQuestionAnswers(prev => { const next = { ...prev }; delete next[questionId]; return next })
+    setMessages(prev => [
+      ...prev.map(m => m.role === 'question' && m.questionId === questionId ? { ...m, answered: true } : m),
+      { role: 'user' as const, content: answer },
+    ])
+    await client.answerWidgetQuestion(questionId, answer)
   }
 
   if (initError) {
@@ -181,6 +197,38 @@ export function WidgetBuilderPage() {
                     <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-mono">
                       ⚙ {msg.name}
                     </span>
+                  </div>
+                )
+              }
+              if (msg.role === 'question') {
+                return (
+                  <div key={i} className="flex flex-col gap-1.5">
+                    <div className="flex justify-start">
+                      <div className="max-w-[85%] px-3 py-2 rounded-2xl bg-muted border border-border text-sm whitespace-pre-wrap">
+                        <span className="text-xs font-medium text-muted-foreground block mb-1">Question</span>
+                        {msg.question}
+                      </div>
+                    </div>
+                    {!msg.answered && (
+                      <div className="flex gap-2 pl-1">
+                        <input
+                          type="text"
+                          value={questionAnswers[msg.questionId] ?? ''}
+                          onChange={e => setQuestionAnswers(prev => ({ ...prev, [msg.questionId]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAnswerQuestion(msg.questionId) } }}
+                          placeholder="Your answer…"
+                          className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleAnswerQuestion(msg.questionId)}
+                          disabled={!(questionAnswers[msg.questionId] ?? '').trim()}
+                          className="px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Answer
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               }

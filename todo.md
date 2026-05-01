@@ -1,20 +1,39 @@
 # idea
 
-user created apps
+a marketplace for user created app
 
-## requirements
-1. once the widget is built if the widget is edited a copy of the widget and it's data should be kept to allow the user to rollback
+## round 1 - minimal core
+1. list user widget
+2. create widget page ui
 
 
+## round 2 - create widget
+1. create widget
+   1. polished ui
+   2. data access 
+   3. agent access
+
+## round 3 - market place
+
+1. submit to review
+2. list marketplace apps
 
 
-# round 5 - infra
+## round 4 - approval dashboard
+1. approve request
+2. share in marketplace
+
+## round 5 - infra
 
 1. signing
    1. sign in
    2. sign up
 2. payment
-3. credit limits
+
+## round 6 - usage and payments
+1. apps with ai usage
+2. create apps usage
+3. add credit payment
 
 
 # security consideration

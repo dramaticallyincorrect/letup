@@ -29,6 +29,9 @@ const BUILD_SYSTEM         = cached(readFileSync(join(__dirname, '../prompts/wid
 const POLISH_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/widget-polish.md'), 'utf8'))
 const CRITIC_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/widget-critic.md'), 'utf8'))
 
+// Deferred promises waiting for user answers, keyed by question ID
+const pendingQuestions = new Map<string, (answer: string) => void>()
+
 const widgetsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   listWidgets(fastify)
   createWidget(fastify)
@@ -36,6 +39,7 @@ const widgetsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   patchWidget(fastify)
   deleteWidget(fastify)
   buildWidget(fastify)
+  answerWidgetQuestion(fastify)
 }
 
 function sseHeaders(origin?: string) {
@@ -313,17 +317,39 @@ function buildWidget(fastify: Fastify) {
       handler: async () => ({ files: [...virtualFiles.keys()] }),
     }
 
+    const askUserTool = {
+      name: 'ask_user',
+      description: 'Ask the user a clarifying question before building. Use this when the request is ambiguous or missing key information needed to design the widget. Ask at most 1-2 focused questions.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          question: { type: 'string', description: 'A specific, concise question for the user' },
+        },
+        required: ['question'],
+      },
+      handler: async (input: Record<string, unknown>) => {
+        const questionId = crypto.randomUUID()
+        const answer = await new Promise<string>(resolve => {
+          pendingQuestions.set(questionId, resolve)
+          sendEvent('user_question', { questionId, question: input.question as string })
+        })
+        return { answer }
+      },
+    }
+
     try {
       // -----------------------------------------------------------------------
-      // PASS 0 — Plan (lightweight, no tools, cached system prompt)
+      // PASS 0 — Plan (with ask_user tool for clarification)
       // -----------------------------------------------------------------------
       sendEvent('text', { text: '**Planning the design…**\n\n' })
 
       const planMessages = await runAgentLoop({
         messages: [{ role: 'user', content: userMessage }],
+        tools: [askUserTool],
         system: PLAN_SYSTEM,
-        maxTokens: 512,
+        maxTokens: 2048,
         onText: (delta) => sendEvent('text', { text: delta }),
+        onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
       })
       const designPlan = extractText(planMessages)
 
@@ -500,6 +526,30 @@ function buildWidget(fastify: Fastify) {
 
     sendEvent('done', {})
     reply.raw.end()
+  })
+}
+
+function answerWidgetQuestion(fastify: Fastify) {
+  fastify.post<{ Body: { questionId: string; answer: string } }>('/widgets/answer', {
+    schema: {
+      tags: ['Widgets'],
+      summary: 'Submit a user answer to a pending ask_user question',
+      body: {
+        type: 'object',
+        properties: {
+          questionId: { type: 'string' },
+          answer: { type: 'string' },
+        },
+        required: ['questionId', 'answer'],
+      },
+    },
+  }, async (request, reply) => {
+    const { questionId, answer } = request.body
+    const resolve = pendingQuestions.get(questionId)
+    if (!resolve) return reply.code(404).send({ error: 'Question not found or already answered' })
+    pendingQuestions.delete(questionId)
+    resolve(answer)
+    return reply.send({ ok: true })
   })
 }
 
