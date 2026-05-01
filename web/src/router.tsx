@@ -3,10 +3,11 @@ import {
   createRootRoute,
   createRoute,
   Outlet,
+  redirect,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-import { WidgetsPage } from './widgets/widgets'
-import { WidgetBuilderPage } from './widgets/widget-builder'
+import { HomePage } from './apps/home-page'
+import { CreatePage } from './apps/create-page'
 import { WidgetViewPage } from './widgets/widget-view'
 
 const rootRoute = createRootRoute({
@@ -18,25 +19,53 @@ const rootRoute = createRootRoute({
   ),
 })
 
-const widgetsRoute = createRoute({
+const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/widgets',
-  component: WidgetsPage,
+  path: '/',
+  component: HomePage,
 })
 
-const widgetBuilderRoute = createRoute({
+const createRoute_ = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/widgets/new',
-  component: WidgetBuilderPage,
+  path: '/create',
+  component: CreatePage,
 })
 
-const widgetViewRoute = createRoute({
+const appViewRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/widgets/$widgetId',
+  path: '/apps/$appId',
   component: WidgetViewPage,
 })
 
-const routeTree = rootRoute.addChildren([widgetsRoute, widgetBuilderRoute, widgetViewRoute])
+// Legacy redirects so old /widgets/* links don't 404
+const widgetsRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/widgets',
+  beforeLoad: () => { throw redirect({ to: '/' }) },
+})
+
+const widgetsNewRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/widgets/new',
+  beforeLoad: () => { throw redirect({ to: '/create' }) },
+})
+
+const widgetsViewRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/widgets/$widgetId',
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/apps/$appId', params: { appId: params.widgetId } })
+  },
+})
+
+const routeTree = rootRoute.addChildren([
+  homeRoute,
+  createRoute_,
+  appViewRoute,
+  widgetsRedirectRoute,
+  widgetsNewRedirectRoute,
+  widgetsViewRedirectRoute,
+])
 
 export const router = createRouter({
   routeTree,

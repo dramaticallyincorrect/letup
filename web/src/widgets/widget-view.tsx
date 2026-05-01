@@ -1,19 +1,33 @@
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import * as client from '@repo/data'
 import { WidgetPreview } from './widget-preview'
 
 export function WidgetViewPage() {
-  const { widgetId } = useParams({ from: '/widgets/$widgetId' })
+  const { appId } = useParams({ from: '/apps/$appId' })
   const { data: widget, isPending, isError } = useQuery({
-    queryKey: ['widget', widgetId],
-    queryFn: () => client.getWidget(widgetId),
+    queryKey: ['widget', appId],
+    queryFn: () => client.getWidget(appId),
   })
 
-  if (isPending) return <p className="p-6 text-muted-foreground">Loading widget...</p>
-  if (isError) return <p className="p-6 text-destructive">Failed to load widget.</p>
+  if (isPending) {
+    return (
+      <div style={{ padding: 40, fontFamily: 'var(--font-jakarta)', color: 'var(--ink-3)' }}>
+        Loading…
+      </div>
+    )
+  }
+  if (isError) {
+    return (
+      <div style={{ padding: 40, fontFamily: 'var(--font-jakarta)', color: 'var(--ink-3)' }}>
+        Failed to load app.{' '}
+        <Link to="/" style={{ color: 'var(--ma-accent)' }}>
+          Go back
+        </Link>
+      </div>
+    )
+  }
 
-  return (
-    <WidgetPreview compiledCode={widget.compiledCode} cssCode={widget.cssCode} />
-  )
+  return <WidgetPreview compiledCode={widget.compiledCode} cssCode={widget.cssCode} />
 }

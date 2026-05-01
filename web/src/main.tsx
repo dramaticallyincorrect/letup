@@ -5,6 +5,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { router } from './router'
 import './index.css'
+import './mini-apps.css'
 
 const queryClient = new QueryClient()
 
