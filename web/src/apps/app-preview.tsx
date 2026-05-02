@@ -19,6 +19,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { generateText } from '@repo/data'
+
+
 
 // Modules the widget sandbox can import via require()
 const shadcnRegistry: Record<string, Record<string, unknown>> = {
@@ -42,6 +45,7 @@ const shadcnRegistry: Record<string, Record<string, unknown>> = {
   '@/components/ui/label': { Label },
   '@/components/ui/textarea': { Textarea },
   '@/lib/utils': { cn },
+  'ai': { generateText },
 }
 
 export function AppPreview({

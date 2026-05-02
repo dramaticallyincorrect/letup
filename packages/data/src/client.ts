@@ -74,6 +74,16 @@ export async function answerAppQuestion(questionId: string, answer: string): Pro
   })
 }
 
+export async function generateText({ prompt, system, model }: { prompt: string; system?: string; model?: string }): Promise<string> {
+  const res = await apiFetch('/ai/generate', {
+    method: 'POST',
+    body: JSON.stringify({ prompt, system, model }),
+  })
+  if (!res.ok) throw new Error(`AI request failed: ${res.status}`)
+  const data = await res.json() as { text: string }
+  return data.text
+}
+
 export async function* parseSSE(reader: ReadableStreamDefaultReader<Uint8Array>) {
   const decoder = new TextDecoder()
   let buffer = ''

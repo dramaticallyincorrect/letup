@@ -1,11 +1,6 @@
 import {
-  FastifyBaseLogger,
-  FastifyInstance,
-  FastifyTypeProviderDefault,
-  RawServerDefault,
   type FastifyPluginAsync,
 } from 'fastify'
-import { IncomingMessage, ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { desc, eq } from 'drizzle-orm'
@@ -14,14 +9,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { apps } from '../db/schema'
 import { runAgentLoop, cached } from '../agent'
 import { createShadcnMcpTools } from '../shadcnMcp'
-
-type Fastify = FastifyInstance<
-  RawServerDefault,
-  IncomingMessage,
-  ServerResponse<IncomingMessage>,
-  FastifyBaseLogger,
-  FastifyTypeProviderDefault
->
+import { Fastify } from '../fastify_type'
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
 const PLAN_SYSTEM          = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
@@ -182,6 +170,7 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
       '@/components/ui/*', '@/lib/utils',
       'radix-ui', 'lucide-react',
       'class-variance-authority', 'tailwind-merge',
+      'ai',
     ],
     plugins: [
       {
@@ -544,7 +533,7 @@ function buildApp(fastify: Fastify) {
       }
 
       const [updated] = await fastify.db.select().from(apps).where(eq(apps.id, appId))
-      sendEvent('app', updated)
+      sendEvent('widget', updated)
     } catch (err) {
       fastify.log.error(err, 'app build error')
       sendEvent('error', { message: err instanceof Error ? err.message : 'Unknown error' })

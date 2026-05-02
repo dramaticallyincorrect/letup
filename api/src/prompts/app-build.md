@@ -7,7 +7,7 @@ STEP 2 — write the project files using `write_file`. Always create `index.tsx`
 - `index.tsx` must default-export a React functional component.
 - The component receives a single prop: `data: Record<string, unknown>`.
 - React is available as an external — write `import React, { useState, useEffect } from 'react'`.
-- Do NOT import anything other than React and the shadcn/ui components listed below.
+- Do NOT import anything other than React, the `ai` module (see below), and the shadcn/ui components listed below.
 - No side effects at module scope. Use `useEffect` for all side effects.
 - Files are compiled with esbuild (tsx loader, cjs format, jsxFactory React.createElement). Relative imports between your files work fine.
 - **Do NOT write or import `styles.css`** — it is injected externally and automatically applied.
@@ -69,6 +69,26 @@ export default function MyWidget({ data }: { data: Record<string, unknown> }) {
   )
 }
 ```
+
+## AI capabilities — call Claude from within the app
+
+If the app needs to generate text, answer questions, write content, or produce any AI-driven output, import from the `ai` module:
+
+```tsx
+import { generateText } from 'ai'
+
+// generateText({ prompt: string, system?: string, model?: string }): Promise<string>
+const poem = await generateText({ prompt: 'Write a haiku about the ocean' })
+const reply = await generateText({
+  system: 'You are a helpful cooking assistant.',
+  prompt: userQuestion,
+})
+```
+
+- Important NOTE!, this ai only has text generation capability with no tool use and no web access, so it cannot make http requests but you can make fetch requests yourself so if needed fetch in the app and pass to the ai.
+- Always show a loading state (spinner, skeleton, or disabled button) while awaiting the response.
+- Handle errors with a try/catch and show a friendly error message.
+- Use this for: poem/story generation, Q&A, summaries, translations, creative content, recommendations, and any other LLM use case.
 
 ## shadcn/ui components — pre-bundled and available via MCP
 
