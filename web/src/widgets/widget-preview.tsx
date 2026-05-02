@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import * as FramerMotion from 'framer-motion'
+import * as RadixUI from 'radix-ui'
+import * as LucideIcons from 'lucide-react'
+import * as CVA from 'class-variance-authority'
+import { twMerge } from 'tailwind-merge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -19,6 +23,10 @@ import { cn } from '@/lib/utils'
 // Modules the widget sandbox can import via require()
 const shadcnRegistry: Record<string, Record<string, unknown>> = {
   'framer-motion': FramerMotion as unknown as Record<string, unknown>,
+  'radix-ui': RadixUI as unknown as Record<string, unknown>,
+  'lucide-react': LucideIcons as unknown as Record<string, unknown>,
+  'class-variance-authority': CVA as unknown as Record<string, unknown>,
+  'tailwind-merge': { twMerge } as Record<string, unknown>,
   '@/components/ui/button': { Button },
   '@/components/ui/dialog': {
     Dialog,

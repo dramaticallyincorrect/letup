@@ -474,9 +474,23 @@
 .ma-create-shell {
   height: calc(100vh - 65px);
   display: grid;
-  grid-template-columns: 1fr 1fr;
   background: var(--bg);
   font-family: var(--font-jakarta);
+  overflow: hidden;
+}
+
+.ma-resize-handle {
+  width: 5px;
+  cursor: col-resize;
+  background: var(--line);
+  position: relative;
+  z-index: 10;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.ma-resize-handle:hover,
+.ma-resize-handle.dragging {
+  background: var(--ma-accent);
 }
 
 .ma-create-pane {
@@ -745,6 +759,83 @@
   border: 1.5px solid var(--ink-4);
 }
 
+/* ── File tree ─────────────────────────────────────────────────────── */
+.ma-file-tree {
+  width: 100%;
+  height: 100%;
+  padding: 16px 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  overflow: auto;
+}
+.ma-file-tree-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 20px;
+  color: var(--ink-2);
+}
+.ma-file-tree-row:hover { background: var(--bg-sunk); color: var(--ink); }
+.ma-file-tree-dir { color: var(--ink); font-weight: 600; }
+.ma-file-tree-indent { width: 16px; flex-shrink: 0; }
+.ma-file-tree-icon {
+  font-size: 10px; font-weight: 700; letter-spacing: 0;
+  padding: 2px 5px; border-radius: 4px;
+  flex-shrink: 0;
+  font-family: var(--font-jakarta);
+  background: var(--bg-sunk);
+  color: var(--ink-3);
+}
+.ma-file-tree-icon-tsx { background: oklch(0.9 0.08 240); color: oklch(0.45 0.2 240); }
+.ma-file-tree-icon-css { background: oklch(0.9 0.08 290); color: oklch(0.45 0.2 290); }
+.ma-file-tree-icon-js  { background: oklch(0.93 0.1 80);  color: oklch(0.5 0.2 80); }
+.ma-file-tree-name { flex: 1; }
+.ma-file-tree-size { color: var(--ink-4); font-size: 11px; }
+
+/* override preview-stage for file tree / viewer */
+.ma-preview-stage:has(.ma-file-tree),
+.ma-preview-stage:has(.ma-file-viewer) {
+  display: block;
+  padding: 0;
+}
+
+.ma-file-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.ma-file-viewer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev);
+  flex-shrink: 0;
+}
+.ma-file-viewer-back {
+  appearance: none; border: 0; background: transparent;
+  color: var(--ink-3); cursor: pointer;
+  font-family: var(--font-jakarta); font-size: 13px; font-weight: 500;
+  padding: 4px 8px; border-radius: 6px;
+}
+.ma-file-viewer-back:hover { background: var(--bg-sunk); color: var(--ink); }
+.ma-file-viewer-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.ma-file-viewer-body {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 20px 24px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  white-space: pre;
+  tab-size: 2;
+}
+
 /* ── Modal ─────────────────────────────────────────────────────────── */
 .ma-modal-backdrop {
   position: fixed; inset: 0; z-index: 100;
@@ -819,7 +910,8 @@
   .ma-grid { grid-template-columns: 1fr 1fr; }
   .ma-mkt-hero { grid-template-columns: 1fr; }
   .ma-store-grid { grid-template-columns: 1fr; }
-  .ma-create-shell { grid-template-columns: 1fr !important; grid-template-rows: 1fr 1fr; }
+  .ma-create-shell { grid-template-columns: 1fr !important; grid-template-rows: 1fr 0 1fr; }
+  .ma-resize-handle { display: none; }
   .ma-chrome-search { width: 160px; }
   .ma-page-inner { padding: 32px 16px 80px; }
 }

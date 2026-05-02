@@ -13,38 +13,44 @@ Rules:
 
 ## Design system — use these CSS variables
 
-The `styles.css` file defines a complete token set. Use these variables instead of hardcoded colors:
+The `styles.css` file defines a complete token set using shadcn's naming convention. Use these variables instead of hardcoded colors:
 
 ```
-var(--bg)          page background
-var(--bg-elev)     elevated surface (cards, panels)
-var(--bg-sunk)     recessed surface
-var(--bg-warm)     subtle tinted accent surface
-var(--ink)         primary text
-var(--ink-2)       secondary text
-var(--ink-3)       tertiary/muted text
-var(--ink-4)       placeholder/disabled
-var(--line)        subtle border
-var(--line-2)      stronger border
-var(--accent)      primary accent color
-var(--accent-soft) accent at low opacity (bg highlight)
-var(--accent-ink)  text on accent backgrounds
-var(--tint-*-bg)   rich tinted surface backgrounds
-var(--tint-*-fg)   readable foreground for each tint
+/* ── shadcn core palette ─────────────────────────────── */
+var(--background)           page background
+var(--foreground)           primary text
+var(--card)                 elevated surface (cards, panels)
+var(--card-foreground)      text on cards
+var(--muted)                recessed/subtle surface
+var(--muted-foreground)     secondary/muted text
+var(--primary)              primary accent color
+var(--primary-foreground)   text on primary accent
+var(--secondary)            secondary accent
+var(--secondary-foreground) text on secondary accent
+var(--accent)               subtle tinted surface
+var(--accent-foreground)    text on accent surface
+var(--border)               border color
+var(--ring)                 focus ring color
+var(--radius)               base border radius
+
+/* ── supplementary tokens ───────────────────────────── */
+var(--font-display)         display/headline font stack
+var(--font-sans)            body font stack
+var(--font-mono)            monospace font stack
 var(--shadow-sm / --shadow-md / --shadow-lg)
-var(--radius / --radius-sm / --radius-lg / --radius-xl)
-var(--font-display / --font-sans / --font-mono)
+var(--tint-*-bg / --tint-*-fg)   tint surface/foreground pairs
 ```
 
 Apply via inline style or Tailwind arbitrary:
 ```tsx
-<div style={{ background: 'var(--bg-elev)', boxShadow: 'var(--shadow-md)', borderRadius: 'var(--radius)' }}>
-<div className="bg-[var(--bg-elev)] shadow-[var(--shadow-md)] rounded-[var(--radius)]">
+<div style={{ background: 'var(--card)', boxShadow: 'var(--shadow-md)', borderRadius: 'var(--radius)' }}>
+<div className="bg-[var(--card)] shadow-[var(--shadow-md)] rounded-[var(--radius)]">
 ```
 
 **Do NOT use hardcoded hex/rgb/oklch color values** — always go through the token variables.
 
 ## shadcn/ui components — available
+Pre-bundled:
 ```tsx
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
@@ -53,6 +59,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 ```
+Additional components already written to virtual files (e.g. `./components/ui/accordion`) may also be in scope — import them relatively.
 
 ## Framer Motion — available for import
 ```tsx
@@ -75,7 +82,7 @@ React.useEffect(() => {
     @keyframes slideUp   { from { opacity:0; transform:translateY(16px) } to { opacity:1; transform:translateY(0) } }
     @keyframes fadeIn    { from { opacity:0 } to { opacity:1 } }
     @keyframes scaleIn   { from { opacity:0; transform:scale(0.95) } to { opacity:1; transform:scale(1) } }
-    @keyframes glowPulse { 0%,100% { box-shadow:0 0 12px var(--accent-soft) } 50% { box-shadow:0 0 28px var(--accent-soft) } }
+    @keyframes glowPulse { 0%,100% { box-shadow:0 0 12px color-mix(in oklch, var(--primary) 30%, transparent) } 50% { box-shadow:0 0 28px color-mix(in oklch, var(--primary) 50%, transparent) } }
     .anim-slideUp  { animation: slideUp  0.35s ease-out both }
     .anim-fadeIn   { animation: fadeIn   0.25s ease-out both }
     .anim-scaleIn  { animation: scaleIn  0.25s ease-out both }
@@ -107,7 +114,7 @@ You're polishing a **complete web page**, not a component. Look for:
 
 Before calling `write_file`, verify:
 - [ ] Root element has `className="widget-root"`?
-- [ ] Using `var(--bg)`, `var(--ink)`, `var(--accent)` etc. — NOT hardcoded colors?
+- [ ] Using `var(--background)`, `var(--foreground)`, `var(--primary)` etc. — NOT hardcoded colors?
 - [ ] `var(--font-display)` applied to headlines, `var(--font-sans)` to body?
 - [ ] Most important element is 3× larger/heavier than secondary elements?
 - [ ] Every `<button>` and `<input>` explicitly styled?

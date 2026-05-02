@@ -13,6 +13,7 @@ import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { widgets } from '../db/schema'
 import { runAgentLoop, cached } from '../agent'
+import { createShadcnMcpTools } from '../shadcnMcp'
 
 type Fastify = FastifyInstance<
   RawServerDefault,
@@ -176,7 +177,12 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
     jsxFactory: 'React.createElement',
     jsxFragment: 'React.Fragment',
     target: 'es2020',
-    external: ['react', 'framer-motion', '@/components/ui/*', '@/lib/utils'],
+    external: [
+      'react', 'framer-motion',
+      '@/components/ui/*', '@/lib/utils',
+      'radix-ui', 'lucide-react',
+      'class-variance-authority', 'tailwind-merge',
+    ],
     plugins: [
       {
         name: 'virtual-fs',
@@ -221,7 +227,7 @@ function extractText(messages: Anthropic.MessageParam[]): string {
 // ---------------------------------------------------------------------------
 
 function buildWidget(fastify: Fastify) {
-  fastify.post<{ Body: { widgetId: string; userMessage: string } }>('/widgets/build', {
+  fastify.post<{ Body: { widgetId: string; userMessage: string; model?: string } }>('/widgets/build', {
     schema: {
       tags: ['Widgets'],
       summary: 'Build or refine a widget via AI agent (SSE)',
@@ -230,12 +236,13 @@ function buildWidget(fastify: Fastify) {
         properties: {
           widgetId: { type: 'string' },
           userMessage: { type: 'string' },
+          model: { type: 'string', description: 'Override the Claude model (e.g. claude-haiku-4-5-20251001)' },
         },
         required: ['widgetId', 'userMessage'],
       },
     },
   }, async (request, reply) => {
-    const { widgetId, userMessage } = request.body
+    const { widgetId, userMessage, model: modelOverride } = request.body
 
     const [widget] = await fastify.db.select().from(widgets).where(eq(widgets.id, widgetId))
     if (!widget) return reply.code(404).send({ error: 'Widget not found' })
@@ -349,6 +356,7 @@ function buildWidget(fastify: Fastify) {
         tools: [askUserTool],
         system: PLAN_SYSTEM,
         maxTokens: 2048,
+        ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
         onText: (delta) => sendEvent('text', { text: delta }),
         onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
       })
@@ -359,15 +367,21 @@ function buildWidget(fastify: Fastify) {
       // -----------------------------------------------------------------------
       sendEvent('text', { text: '\n\n---\n\n**Creating design system…**\n\n' })
 
-      await runAgentLoop({
-        messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this widget.` }],
-        tools: [writeFileTool],
-        system: DESIGN_SYSTEM_PROMPT,
-        maxTokens: 16000,
-        thinking: { budget_tokens: 8000 },
-        onText: (delta) => sendEvent('text', { text: delta }),
-        onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-      })
+      const shadcnPass1 = await createShadcnMcpTools()
+      try {
+        await runAgentLoop({
+          messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this widget.` }],
+          tools: [...shadcnPass1.tools, writeFileTool],
+          system: DESIGN_SYSTEM_PROMPT,
+          maxTokens: 16000,
+          thinking: { budget_tokens: 8000 },
+          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+          onText: (delta) => sendEvent('text', { text: delta }),
+          onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+        })
+      } finally {
+        await shadcnPass1.close()
+      }
 
       const designSystemCSS = virtualFiles.get('styles.css') ?? ''
 
@@ -380,40 +394,48 @@ function buildWidget(fastify: Fastify) {
         ? `Design plan:\n${designPlan}\n\nDesign system (styles.css already written — use its CSS variables):\n\`\`\`css\n${designSystemCSS}\n\`\`\`\n\nUser request: ${userMessage}`
         : userMessage
 
-      const finalMessages = await runAgentLoop({
-        messages: [...messages.slice(0, -1), { role: 'user', content: buildUserMessage }],
-        tools: [
-          {
-            name: 'set_widget_metadata',
-            description: 'Set the display name and one-sentence description for the widget.',
-            input_schema: {
-              type: 'object' as const,
-              properties: {
-                name: { type: 'string' },
-                description: { type: 'string' },
+      let finalMessages: Anthropic.MessageParam[] = []
+      const shadcnPass2 = await createShadcnMcpTools()
+      try {
+        finalMessages = await runAgentLoop({
+          messages: [...messages.slice(0, -1), { role: 'user', content: buildUserMessage }],
+          tools: [
+            ...shadcnPass2.tools,
+            {
+              name: 'set_widget_metadata',
+              description: 'Set the display name and one-sentence description for the widget.',
+              input_schema: {
+                type: 'object' as const,
+                properties: {
+                  name: { type: 'string' },
+                  description: { type: 'string' },
+                },
+                required: ['name', 'description'],
               },
-              required: ['name', 'description'],
+              handler: async (input: Record<string, unknown>) => {
+                agentState.name = input.name as string
+                agentState.description = input.description as string
+                await fastify.db
+                  .update(widgets)
+                  .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
+                  .where(eq(widgets.id, widgetId))
+                return { success: true }
+              },
             },
-            handler: async (input: Record<string, unknown>) => {
-              agentState.name = input.name as string
-              agentState.description = input.description as string
-              await fastify.db
-                .update(widgets)
-                .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
-                .where(eq(widgets.id, widgetId))
-              return { success: true }
-            },
-          },
-          writeFileTool,
-          readFileTool,
-          listFilesTool,
-        ],
-        system: BUILD_SYSTEM,
-        maxTokens: 16000,
-        thinking: { budget_tokens: 8000 },
-        onText: (delta) => sendEvent('text', { text: delta }),
-        onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-      })
+            writeFileTool,
+            readFileTool,
+            listFilesTool,
+          ],
+          system: BUILD_SYSTEM,
+          maxTokens: 16000,
+          thinking: { budget_tokens: 8000 },
+          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+          onText: (delta) => sendEvent('text', { text: delta }),
+          onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+        })
+      } finally {
+        await shadcnPass2.close()
+      }
 
       // Compile after build pass
       if (virtualFiles.size > 0) {
@@ -451,6 +473,7 @@ function buildWidget(fastify: Fastify) {
           tools: [writeFileTool, readFileTool, listFilesTool],
           system: POLISH_SYSTEM,
           maxTokens: 16000,
+          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
           onText: (delta) => sendEvent('text', { text: delta }),
           onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
         })
@@ -479,6 +502,7 @@ function buildWidget(fastify: Fastify) {
           messages: [{ role: 'user', content: filesSummary }],
           system: CRITIC_SYSTEM,
           maxTokens: 512,
+          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
           onText: (delta) => sendEvent('text', { text: delta }),
         })
 
@@ -507,6 +531,7 @@ function buildWidget(fastify: Fastify) {
             tools: [writeFileTool, readFileTool, listFilesTool],
             system: POLISH_SYSTEM,
             maxTokens: 16000,
+            ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
             onText: (delta) => sendEvent('text', { text: delta }),
             onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
           })

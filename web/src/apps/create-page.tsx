@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import * as client from '@repo/data'
 import { Chrome } from './components/chrome'
@@ -12,7 +12,7 @@ type ChatMessage =
   | { role: 'tool'; name: string }
   | { role: 'question'; questionId: string; question: string; answered: boolean }
 
-type PreviewTab = 'preview' | 'source'
+type PreviewTab = 'preview' | 'source' | 'files'
 
 const BUILD_STEPS = ['Understand', 'Design', 'Build', 'Preview'] as const
 
@@ -30,8 +30,36 @@ export function CreatePage() {
   const [previewTab, setPreviewTab] = useState<PreviewTab>('preview')
   const [buildStep, setBuildStep] = useState(0)
   const [initError, setInitError] = useState<string | null>(null)
+  const [splitPct, setSplitPct] = useState(30)
+  const [openFile, setOpenFile] = useState<{ name: string; content: string } | null>(null)
+  const isDragging = useRef(false)
+  const shellRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isDragging.current = true
+    const handle = e.currentTarget as HTMLElement
+    handle.classList.add('dragging')
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current || !shellRef.current) return
+      const rect = shellRef.current.getBoundingClientRect()
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100
+      setSplitPct(Math.min(Math.max(pct, 15), 75))
+    }
+
+    const onMouseUp = () => {
+      isDragging.current = false
+      handle.classList.remove('dragging')
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -185,7 +213,11 @@ export function CreatePage() {
     <div className="ma-page" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <Chrome active="create" />
 
-      <div className="ma-create-shell">
+      <div
+        className="ma-create-shell"
+        ref={shellRef}
+        style={{ gridTemplateColumns: `${splitPct}fr 5px ${100 - splitPct}fr` }}
+      >
         {/* Chat pane */}
         <div className="ma-create-pane ma-create-chat">
           <div className="ma-chat-header">
@@ -388,6 +420,9 @@ export function CreatePage() {
           </div>
         </div>
 
+        {/* Resize handle */}
+        <div className="ma-resize-handle" onMouseDown={handleResizeStart} />
+
         {/* Preview pane */}
         <div className="ma-create-pane ma-create-preview">
           <div className="ma-preview-toolbar">
@@ -395,16 +430,23 @@ export function CreatePage() {
               <button
                 className="ma-preview-tab"
                 data-active={previewTab === 'preview' ? '1' : '0'}
-                onClick={() => setPreviewTab('preview')}
+                onClick={() => { setPreviewTab('preview'); setOpenFile(null) }}
               >
                 ● Preview
               </button>
               <button
                 className="ma-preview-tab"
                 data-active={previewTab === 'source' ? '1' : '0'}
-                onClick={() => setPreviewTab('source')}
+                onClick={() => { setPreviewTab('source'); setOpenFile(null) }}
               >
                 ◧ Source
+              </button>
+              <button
+                className="ma-preview-tab"
+                data-active={previewTab === 'files' ? '1' : '0'}
+                onClick={() => setPreviewTab('files')}
+              >
+                ⊞ Files
               </button>
             </div>
             <div style={{ flex: 1 }} />
@@ -434,10 +476,10 @@ export function CreatePage() {
                 </p>
               </div>
             ) : previewTab === 'preview' ? (
-              <div className="ma-preview-frame">
+              <div className="w-full">
                 <WidgetPreview compiledCode={compiledCode} cssCode={cssCode} />
               </div>
-            ) : (
+            ) : previewTab === 'source' ? (
               <div className="ma-preview-frame" style={{ padding: 20 }}>
                 <pre
                   style={{
@@ -451,6 +493,42 @@ export function CreatePage() {
                 >
                   {sourceCode ?? 'No source code yet'}
                 </pre>
+              </div>
+            ) : openFile ? (
+              <div className="ma-file-viewer">
+                <div className="ma-file-viewer-header">
+                  <button className="ma-file-viewer-back" onClick={() => setOpenFile(null)}>← Files</button>
+                  <span className="ma-file-viewer-name">{openFile.name}</span>
+                </div>
+                <pre className="ma-file-viewer-body">{openFile.content}</pre>
+              </div>
+            ) : (
+              <div className="ma-file-tree">
+                <div className="ma-file-tree-row ma-file-tree-dir">
+                  <span className="ma-file-tree-icon">▾</span>
+                  <span className="ma-file-tree-name">widget/</span>
+                </div>
+                {sourceCode && (
+                  <div className="ma-file-tree-row" onClick={() => setOpenFile({ name: 'widget.tsx', content: sourceCode })} style={{ cursor: 'pointer' }}>
+                    <span className="ma-file-tree-indent" />
+                    <span className="ma-file-tree-icon ma-file-tree-icon-tsx">tsx</span>
+                    <span className="ma-file-tree-name">widget.tsx</span>
+                    <span className="ma-file-tree-size">{(sourceCode.length / 1024).toFixed(1)} KB</span>
+                  </div>
+                )}
+                {cssCode && (
+                  <div className="ma-file-tree-row" onClick={() => setOpenFile({ name: 'widget.css', content: cssCode })} style={{ cursor: 'pointer' }}>
+                    <span className="ma-file-tree-indent" />
+                    <span className="ma-file-tree-icon ma-file-tree-icon-css">css</span>
+                    <span className="ma-file-tree-name">widget.css</span>
+                    <span className="ma-file-tree-size">{(cssCode.length / 1024).toFixed(1)} KB</span>
+                  </div>
+                )}
+                {!sourceCode && !cssCode && (
+                  <div style={{ padding: '32px 24px', color: 'var(--ink-4)', fontSize: 13, textAlign: 'center' }}>
+                    No files yet — send a message to build your widget.
+                  </div>
+                )}
               </div>
             )}
           </div>

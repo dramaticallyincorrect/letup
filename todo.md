@@ -2,37 +2,34 @@
 
 a marketplace for user created app
 
-## round 1 - minimal core
-1. list user widget
-2. create widget page ui
-
-
-## round 2 - create widget
-1. create widget
+## minimal core
+1. create app
    1. polished ui
-   2. data access 
+   2. data access
    3. agent access
+   4. usage
+      1. create apps usage
+      2. apps with ai usage
 
-## round 3 - market place
+
+## Home Page
+1. list apps
+
+## market place
 
 1. submit to review
 2. list marketplace apps
 
-
-## round 4 - approval dashboard
+## approval dashboard
 1. approve request
 2. share in marketplace
 
-## round 5 - infra
+## infra
 
 1. signing
    1. sign in
    2. sign up
 2. payment
-
-## round 6 - usage and payments
-1. apps with ai usage
-2. create apps usage
 3. add credit payment
 
 

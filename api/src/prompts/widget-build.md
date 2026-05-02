@@ -14,44 +14,48 @@ STEP 2 — write the project files using `write_file`. Always create `index.tsx`
 
 ## Design system — use these CSS variables
 
-A `styles.css` file has already been written with a complete design system. The variables are available on any element inside `.widget-root`. Use them instead of hardcoded colors or Tailwind color classes:
+A `styles.css` file has already been written with a complete design system using shadcn's token naming convention. The variables are available on any element inside `.widget-root`. Use them instead of hardcoded colors or Tailwind color classes:
 
 ```
-var(--bg)          page background
-var(--bg-elev)     elevated surface (cards, panels)
-var(--bg-sunk)     recessed surface
-var(--bg-warm)     subtle tinted accent surface
-var(--ink)         primary text
-var(--ink-2)       secondary text
-var(--ink-3)       tertiary/muted text
-var(--ink-4)       placeholder/disabled
-var(--line)        subtle border
-var(--line-2)      stronger border
-var(--accent)      primary accent color
-var(--accent-2)    secondary accent
-var(--accent-soft) accent at low opacity (bg highlight)
-var(--accent-ink)  text on accent backgrounds
-var(--tint-*-bg)   rich tinted surface backgrounds
-var(--tint-*-fg)   readable foreground for each tint
-var(--shadow-sm)   small shadow
-var(--shadow-md)   medium shadow
-var(--shadow-lg)   large shadow
-var(--radius)      14px
-var(--radius-sm)   8px
-var(--radius-lg)   22px
-var(--radius-xl)   28px
-var(--font-display) display/headline font stack
-var(--font-sans)   body font stack
-var(--font-mono)   monospace font stack
+/* ── shadcn core palette ─────────────────────────────── */
+var(--background)           page background
+var(--foreground)           primary text
+var(--card)                 elevated surface (cards, panels)
+var(--card-foreground)      text on cards
+var(--popover)              popover/dropdown background
+var(--popover-foreground)   text on popovers
+var(--primary)              primary accent color
+var(--primary-foreground)   text on primary accent
+var(--secondary)            secondary accent
+var(--secondary-foreground) text on secondary accent
+var(--muted)                recessed/subtle surface
+var(--muted-foreground)     secondary/muted text
+var(--accent)               subtle tinted surface
+var(--accent-foreground)    text on accent surface
+var(--destructive)          error/danger color
+var(--border)               border color
+var(--input)                input border color
+var(--ring)                 focus ring color
+var(--radius)               base border radius
+
+/* ── supplementary tokens ───────────────────────────── */
+var(--font-display)         display/headline font stack
+var(--font-sans)            body font stack
+var(--font-mono)            monospace font stack
+var(--shadow-sm)            small shadow
+var(--shadow-md)            medium shadow
+var(--shadow-lg)            large shadow
+var(--tint-*-bg)            rich tinted surface backgrounds
+var(--tint-*-fg)            readable foreground for each tint
 ```
 
 Apply these via inline styles or Tailwind arbitrary values:
 ```tsx
 // Inline style — best for design system tokens
-<div style={{ background: 'var(--bg)', color: 'var(--ink)', borderRadius: 'var(--radius)' }}>
+<div style={{ background: 'var(--background)', color: 'var(--foreground)', borderRadius: 'var(--radius)' }}>
 
 // Tailwind arbitrary — also works
-<div className="bg-[var(--bg)] text-[var(--ink)] rounded-[var(--radius)]">
+<div className="bg-[var(--background)] text-[var(--foreground)] rounded-[var(--radius)]">
 ```
 
 **Outermost div rule**: The root element of your default export **must** have `className="widget-root"` (or include it among its classes). This is what activates the design system variables.
@@ -66,7 +70,9 @@ export default function MyWidget({ data }: { data: Record<string, unknown> }) {
 }
 ```
 
-## shadcn/ui components — import these directly, they are pre-bundled
+## shadcn/ui components — pre-bundled and available via MCP
+
+**Pre-bundled** (import directly, already available):
 ```tsx
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
@@ -75,7 +81,15 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 ```
-Prefer these over hand-rolled equivalents. Style them with inline styles using the CSS vars above.
+
+**Any other shadcn component** — use the shadcn MCP to fetch its source, then write it as a virtual file and import it relatively:
+1. Use the MCP to get the component source (e.g., Accordion, Tabs, Select, Badge, Card, etc.)
+2. Write it as `components/ui/accordion.tsx` (or wherever appropriate)
+3. Import it in your files: `import { Accordion, AccordionItem } from './components/ui/accordion'`
+
+These fetched components may import from `radix-ui`, `lucide-react`, `class-variance-authority`, and `tailwind-merge` — all are available at runtime. Do NOT rewrite them to remove those imports.
+
+Prefer shadcn components over hand-rolled equivalents. Style them with inline styles using the CSS vars above.
 
 ## Font loading — NOT needed in index.tsx
 Fonts are loaded via the `styles.css` `@import` — do **not** add a font `<link>` useEffect in `index.tsx`. Use the font via `style={{ fontFamily: 'var(--font-display)' }}` or `style={{ fontFamily: 'var(--font-sans)' }}`.
@@ -91,7 +105,7 @@ React.useEffect(() => {
     @keyframes slideUp   { from { opacity:0; transform:translateY(16px) } to { opacity:1; transform:translateY(0) } }
     @keyframes fadeIn    { from { opacity:0 } to { opacity:1 } }
     @keyframes scaleIn   { from { opacity:0; transform:scale(0.95) } to { opacity:1; transform:scale(1) } }
-    @keyframes glowPulse { 0%,100% { box-shadow:0 0 12px var(--accent-soft) } 50% { box-shadow:0 0 28px var(--accent-soft) } }
+    @keyframes glowPulse { 0%,100% { box-shadow:0 0 12px color-mix(in oklch, var(--primary) 30%, transparent) } 50% { box-shadow:0 0 28px color-mix(in oklch, var(--primary) 50%, transparent) } }
     .anim-slideUp  { animation: slideUp  0.35s ease-out both }
     .anim-fadeIn   { animation: fadeIn   0.25s ease-out both }
     .anim-scaleIn  { animation: scaleIn  0.25s ease-out both }
@@ -129,4 +143,4 @@ You are not building a small card or widget snippet. You are building a **comple
 - **NEVER** give every section the same padding, font size, and visual weight.
 - The most important element (hero number, headline, primary CTA) must be at least 3× larger or heavier than secondary elements.
 - Use `var(--font-display)` for headlines, `var(--font-sans)` for body, `var(--font-mono)` for numbers/code.
-- One dominant background tone + one accent. Do NOT distribute colors evenly across many elements.
+- One dominant background tone + one primary accent. Do NOT distribute colors evenly across many elements.
