@@ -34,12 +34,6 @@ export function CreatePage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    client.createWidget('Untitled app').then(w => setWidgetId(w.id)).catch(() => {
-      setInitError('Failed to create app session. Please refresh and try again.')
-    })
-  }, [])
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
@@ -51,11 +45,24 @@ export function CreatePage() {
 
   async function handleSend(text?: string) {
     const msg = (text ?? inputValue).trim()
-    if (!msg || !widgetId || isSending) return
+    if (!msg || isSending) return
 
     setInputValue('')
     setIsSending(true)
     setBuildStep(1)
+
+    let activeWidgetId = widgetId
+    if (!activeWidgetId) {
+      try {
+        const w = await client.createWidget('Untitled app')
+        activeWidgetId = w.id
+        setWidgetId(w.id)
+      } catch {
+        setInitError('Failed to create app session. Please refresh and try again.')
+        setIsSending(false)
+        return
+      }
+    }
 
     setMessages(prev => [
       ...prev,
@@ -67,7 +74,7 @@ export function CreatePage() {
     setTimeout(() => setBuildStep(3), 900)
 
     try {
-      const res = await client.buildWidget(widgetId, msg)
+      const res = await client.buildWidget(activeWidgetId, msg)
       if (!res.ok || !res.body) throw new Error(`Request failed: ${res.status}`)
 
       const reader = res.body.getReader()
@@ -358,7 +365,7 @@ export function CreatePage() {
                     handleSend()
                   }
                 }}
-                disabled={isSending || !widgetId}
+                disabled={isSending}
               />
               <div className="ma-composer-bar">
                 <div className="ma-composer-tools">
@@ -371,7 +378,7 @@ export function CreatePage() {
                 </div>
                 <button
                   className="ma-composer-send"
-                  disabled={!inputValue.trim() || isSending || !widgetId}
+                  disabled={!inputValue.trim() || isSending}
                   onClick={() => handleSend()}
                 >
                   ↑

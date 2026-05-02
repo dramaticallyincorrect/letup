@@ -8,7 +8,7 @@ import {
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { widgets } from '../db/schema'
@@ -65,6 +65,7 @@ function listWidgets(fastify: Fastify) {
         updatedAt: widgets.updatedAt,
       })
       .from(widgets)
+      .orderBy(desc(widgets.createdAt))
     return reply.send(result)
   })
 }
