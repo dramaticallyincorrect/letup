@@ -9,66 +9,66 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return res
 }
 
-export type WidgetStatus = 'draft' | 'published'
+export type AppStatus = 'draft' | 'published'
 
-export type WidgetSummary = {
+export type AppSummary = {
   id: string
   name: string
   description: string
-  status: WidgetStatus
+  status: AppStatus
   createdAt: string
   updatedAt: string
 }
 
-export type Widget = WidgetSummary & {
+export type App = AppSummary & {
   sourceCode: string | null
   compiledCode: string | null
   cssCode: string | null
 }
 
-export async function getWidgets(): Promise<WidgetSummary[]> {
-  const res = await apiFetch('/widgets')
+export async function getApps(): Promise<AppSummary[]> {
+  const res = await apiFetch('/apps')
   return res.json()
 }
 
-export async function getWidget(widgetId: string): Promise<Widget> {
-  const res = await apiFetch(`/widgets/${widgetId}`)
+export async function getApp(appId: string): Promise<App> {
+  const res = await apiFetch(`/apps/${appId}`)
   return res.json()
 }
 
-export async function createWidget(name: string): Promise<Widget> {
-  const res = await apiFetch('/widgets', {
+export async function createApp(name: string): Promise<App> {
+  const res = await apiFetch('/apps', {
     method: 'POST',
     body: JSON.stringify({ name }),
   })
   return res.json()
 }
 
-export async function patchWidget(
-  widgetId: string,
-  patch: Partial<Pick<Widget, 'name' | 'description' | 'status'>>
-): Promise<Widget> {
-  const res = await apiFetch(`/widgets/${widgetId}`, {
+export async function patchApp(
+  appId: string,
+  patch: Partial<Pick<App, 'name' | 'description' | 'status'>>
+): Promise<App> {
+  const res = await apiFetch(`/apps/${appId}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
   })
   return res.json()
 }
 
-export async function deleteWidget(widgetId: string): Promise<void> {
-  await apiFetch(`/widgets/${widgetId}`, { method: 'DELETE' })
+export async function deleteApp(appId: string): Promise<void> {
+  await apiFetch(`/apps/${appId}`, { method: 'DELETE' })
 }
 
-export function buildWidget(widgetId: string, userMessage: string): Promise<Response> {
-  return fetch(`${baseUrl}/widgets/build`, {
+export function buildApp(appId: string, userMessage: string): Promise<Response> {
+  return fetch(`${baseUrl}/apps/build`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ widgetId, userMessage }),
+    body: JSON.stringify({ appId, userMessage }),
   })
 }
 
-export async function answerWidgetQuestion(questionId: string, answer: string): Promise<void> {
-  await apiFetch('/widgets/answer', {
+export async function answerAppQuestion(questionId: string, answer: string): Promise<void> {
+  await apiFetch('/apps/answer', {
     method: 'POST',
     body: JSON.stringify({ questionId, answer }),
   })

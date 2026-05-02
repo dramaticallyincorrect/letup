@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { toast } from 'sonner'
 
 type Props = {
   message: string | null
@@ -8,16 +9,10 @@ type Props = {
 export function Toast({ message, onDismiss }: Props) {
   useEffect(() => {
     if (!message) return
+    toast.success(message, { duration: 2400 })
     const t = setTimeout(onDismiss, 2400)
     return () => clearTimeout(t)
   }, [message, onDismiss])
 
-  if (!message) return null
-
-  return (
-    <div className="ma-toast">
-      <span className="ma-toast-glyph">✓</span>
-      <span>{message}</span>
-    </div>
-  )
+  return null
 }

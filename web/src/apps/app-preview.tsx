@@ -44,7 +44,7 @@ const shadcnRegistry: Record<string, Record<string, unknown>> = {
   '@/lib/utils': { cn },
 }
 
-export function WidgetPreview({
+export function AppPreview({
   compiledCode,
   cssCode,
 }: {

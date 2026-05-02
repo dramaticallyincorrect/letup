@@ -20,7 +20,7 @@ export async function createShadcnMcpTools(): Promise<ShadcnMcpHandle> {
   })
 
   const client = new Client(
-    { name: 'widget-builder', version: '1.0.0' },
+    { name: 'app-builder', version: '1.0.0' },
     { capabilities: {} },
   )
 

@@ -11,7 +11,7 @@ import { join, posix } from 'node:path'
 import { desc, eq } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
-import { widgets } from '../db/schema'
+import { apps } from '../db/schema'
 import { runAgentLoop, cached } from '../agent'
 import { createShadcnMcpTools } from '../shadcnMcp'
 
@@ -24,23 +24,23 @@ type Fastify = FastifyInstance<
 >
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
-const PLAN_SYSTEM          = cached(readFileSync(join(__dirname, '../prompts/widget-plan.md'), 'utf8'))
-const DESIGN_SYSTEM_PROMPT = cached(readFileSync(join(__dirname, '../prompts/widget-design-system.md'), 'utf8'))
-const BUILD_SYSTEM         = cached(readFileSync(join(__dirname, '../prompts/widget-build.md'), 'utf8'))
-const POLISH_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/widget-polish.md'), 'utf8'))
-const CRITIC_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/widget-critic.md'), 'utf8'))
+const PLAN_SYSTEM          = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
+const DESIGN_SYSTEM_PROMPT = cached(readFileSync(join(__dirname, '../prompts/app-design-system.md'), 'utf8'))
+const BUILD_SYSTEM         = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
+const POLISH_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/app-polish.md'), 'utf8'))
+const CRITIC_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/app-critic.md'), 'utf8'))
 
 // Deferred promises waiting for user answers, keyed by question ID
 const pendingQuestions = new Map<string, (answer: string) => void>()
 
-const widgetsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
-  listWidgets(fastify)
-  createWidget(fastify)
-  getWidget(fastify)
-  patchWidget(fastify)
-  deleteWidget(fastify)
-  buildWidget(fastify)
-  answerWidgetQuestion(fastify)
+const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
+  listApps(fastify)
+  createApp(fastify)
+  getApp(fastify)
+  patchApp(fastify)
+  deleteApp(fastify)
+  buildApp(fastify)
+  answerAppQuestion(fastify)
 }
 
 function sseHeaders(origin?: string) {
@@ -52,30 +52,30 @@ function sseHeaders(origin?: string) {
   }
 }
 
-function listWidgets(fastify: Fastify) {
-  fastify.get('/widgets', {
-    schema: { tags: ['Widgets'], summary: 'List all widgets' },
+function listApps(fastify: Fastify) {
+  fastify.get('/apps', {
+    schema: { tags: ['apps'], summary: 'List all apps' },
   }, async (_request, reply) => {
     const result = await fastify.db
       .select({
-        id: widgets.id,
-        name: widgets.name,
-        description: widgets.description,
-        status: widgets.status,
-        createdAt: widgets.createdAt,
-        updatedAt: widgets.updatedAt,
+        id: apps.id,
+        name: apps.name,
+        description: apps.description,
+        status: apps.status,
+        createdAt: apps.createdAt,
+        updatedAt: apps.updatedAt,
       })
-      .from(widgets)
-      .orderBy(desc(widgets.createdAt))
+      .from(apps)
+      .orderBy(desc(apps.createdAt))
     return reply.send(result)
   })
 }
 
-function createWidget(fastify: Fastify) {
-  fastify.post<{ Body: { name: string } }>('/widgets', {
+function createApp(fastify: Fastify) {
+  fastify.post<{ Body: { name: string } }>('/apps', {
     schema: {
-      tags: ['Widgets'],
-      summary: 'Create a draft widget',
+      tags: ['apps'],
+      summary: 'Create a draft app',
       body: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -83,35 +83,35 @@ function createWidget(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
-    const [widget] = await fastify.db
-      .insert(widgets)
+    const [app] = await fastify.db
+      .insert(apps)
       .values({ name: request.body.name })
       .returning()
-    return reply.code(201).send(widget)
+    return reply.code(201).send(app)
   })
 }
 
-function getWidget(fastify: Fastify) {
-  fastify.get<{ Params: { widgetId: string } }>('/widgets/:widgetId', {
-    schema: { tags: ['Widgets'], summary: 'Get a widget by ID' },
+function getApp(fastify: Fastify) {
+  fastify.get<{ Params: { appId: string } }>('/apps/:appId', {
+    schema: { tags: ['apps'], summary: 'Get an app by ID' },
   }, async (request, reply) => {
-    const [widget] = await fastify.db
+    const [app] = await fastify.db
       .select()
-      .from(widgets)
-      .where(eq(widgets.id, request.params.widgetId))
-    if (!widget) return reply.code(404).send({ error: 'Widget not found' })
-    return reply.send(widget)
+      .from(apps)
+      .where(eq(apps.id, request.params.appId))
+    if (!app) return reply.code(404).send({ error: 'app not found' })
+    return reply.send(app)
   })
 }
 
-function patchWidget(fastify: Fastify) {
+function patchApp(fastify: Fastify) {
   fastify.patch<{
-    Params: { widgetId: string }
+    Params: { appId: string }
     Body: { name?: string; description?: string; status?: 'draft' | 'published' }
-  }>('/widgets/:widgetId', {
+  }>('/apps/:appId', {
     schema: {
-      tags: ['Widgets'],
-      summary: 'Update widget name, description, or status',
+      tags: ['apps'],
+      summary: 'Update app name, description, or status',
       body: {
         type: 'object',
         properties: {
@@ -122,23 +122,23 @@ function patchWidget(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
-    const { widgetId } = request.params
+    const { appId } = request.params
     const patch = request.body
     const [updated] = await fastify.db
-      .update(widgets)
+      .update(apps)
       .set({ ...patch, updatedAt: new Date() })
-      .where(eq(widgets.id, widgetId))
+      .where(eq(apps.id, appId))
       .returning()
-    if (!updated) return reply.code(404).send({ error: 'Widget not found' })
+    if (!updated) return reply.code(404).send({ error: 'app not found' })
     return reply.send(updated)
   })
 }
 
-function deleteWidget(fastify: Fastify) {
-  fastify.delete<{ Params: { widgetId: string } }>('/widgets/:widgetId', {
-    schema: { tags: ['Widgets'], summary: 'Delete a widget' },
+function deleteApp(fastify: Fastify) {
+  fastify.delete<{ Params: { appId: string } }>('/apps/:appId', {
+    schema: { tags: ['apps'], summary: 'Delete an app' },
   }, async (request, reply) => {
-    await fastify.db.delete(widgets).where(eq(widgets.id, request.params.widgetId))
+    await fastify.db.delete(apps).where(eq(apps.id, request.params.appId))
     return reply.code(204).send()
   })
 }
@@ -223,29 +223,29 @@ function extractText(messages: Anthropic.MessageParam[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Build widget route
+// Build app route
 // ---------------------------------------------------------------------------
 
-function buildWidget(fastify: Fastify) {
-  fastify.post<{ Body: { widgetId: string; userMessage: string; model?: string } }>('/widgets/build', {
+function buildApp(fastify: Fastify) {
+  fastify.post<{ Body: { appId: string; userMessage: string; model?: string } }>('/apps/build', {
     schema: {
-      tags: ['Widgets'],
-      summary: 'Build or refine a widget via AI agent (SSE)',
+      tags: ['apps'],
+      summary: 'Build or refine an app via AI agent (SSE)',
       body: {
         type: 'object',
         properties: {
-          widgetId: { type: 'string' },
+          appId: { type: 'string' },
           userMessage: { type: 'string' },
           model: { type: 'string', description: 'Override the Claude model (e.g. claude-haiku-4-5-20251001)' },
         },
-        required: ['widgetId', 'userMessage'],
+        required: ['appId', 'userMessage'],
       },
     },
   }, async (request, reply) => {
-    const { widgetId, userMessage, model: modelOverride } = request.body
+    const { appId, userMessage, model: modelOverride } = request.body
 
-    const [widget] = await fastify.db.select().from(widgets).where(eq(widgets.id, widgetId))
-    if (!widget) return reply.code(404).send({ error: 'Widget not found' })
+    const [app] = await fastify.db.select().from(apps).where(eq(apps.id, appId))
+    if (!app) return reply.code(404).send({ error: 'app not found' })
 
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
@@ -255,21 +255,21 @@ function buildWidget(fastify: Fastify) {
     }
 
     const agentState = {
-      name: widget.name,
-      description: widget.description,
-      compiledCode: widget.compiledCode,
+      name: app.name,
+      description: app.description,
+      compiledCode: app.compiledCode,
     }
 
     const virtualFiles = new Map<string, string>()
 
     // Seed with existing source files for refinement requests
-    if (Array.isArray(widget.sourceFiles)) {
-      for (const f of widget.sourceFiles as Array<{ path: string; content: string }>) {
+    if (Array.isArray(app.sourceFiles)) {
+      for (const f of app.sourceFiles as Array<{ path: string; content: string }>) {
         virtualFiles.set(f.path, f.content)
       }
     }
 
-    const history = (Array.isArray(widget.conversationHistory) ? widget.conversationHistory : []) as Anthropic.MessageParam[]
+    const history = (Array.isArray(app.conversationHistory) ? app.conversationHistory : []) as Anthropic.MessageParam[]
     const messages: Anthropic.MessageParam[] = [...history, { role: 'user', content: userMessage }]
 
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
@@ -279,9 +279,9 @@ function buildWidget(fastify: Fastify) {
         const cssCode = virtualFiles.get('styles.css') ?? null
         const sourceFilesArray = [...virtualFiles.entries()].map(([path, content]) => ({ path, content }))
         await fastify.db
-          .update(widgets)
+          .update(apps)
           .set({ compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, updatedAt: new Date() })
-          .where(eq(widgets.id, widgetId))
+          .where(eq(apps.id, appId))
         return { success: true }
       } catch (err) {
         return { error: err instanceof Error ? err.message : 'Compile failed' }
@@ -290,7 +290,7 @@ function buildWidget(fastify: Fastify) {
 
     const writeFileTool = {
       name: 'write_file',
-      description: 'Write or overwrite a file in the widget project. Entry point must be "index.tsx". Add files like "components/Card.tsx", "hooks/useData.ts" as needed.',
+      description: 'Write or overwrite a file in the app project. Entry point must be "index.tsx". Add files like "components/Card.tsx", "hooks/useData.ts" as needed.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -320,14 +320,14 @@ function buildWidget(fastify: Fastify) {
 
     const listFilesTool = {
       name: 'list_files',
-      description: 'List all files currently written in the widget project.',
+      description: 'List all files currently written in the app project.',
       input_schema: { type: 'object' as const, properties: {} },
       handler: async () => ({ files: [...virtualFiles.keys()] }),
     }
 
     const askUserTool = {
       name: 'ask_user',
-      description: 'Ask the user a clarifying question before building. Use this when the request is ambiguous or missing key information needed to design the widget. Ask at most 1-2 focused questions.',
+      description: 'Ask the user a clarifying question before building. Use this when the request is ambiguous or missing key information needed to design the app. Ask at most 1-2 focused questions.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -370,7 +370,7 @@ function buildWidget(fastify: Fastify) {
       const shadcnPass1 = await createShadcnMcpTools()
       try {
         await runAgentLoop({
-          messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this widget.` }],
+          messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this app.` }],
           tools: [...shadcnPass1.tools, writeFileTool],
           system: DESIGN_SYSTEM_PROMPT,
           maxTokens: 16000,
@@ -385,7 +385,7 @@ function buildWidget(fastify: Fastify) {
 
       const designSystemCSS = virtualFiles.get('styles.css') ?? ''
 
-      sendEvent('text', { text: '\n\n---\n\n**Building the widget…**\n\n' })
+      sendEvent('text', { text: '\n\n---\n\n**Building the app…**\n\n' })
 
       // -----------------------------------------------------------------------
       // PASS 2 — Build (extended thinking + cached system prompt)
@@ -402,8 +402,8 @@ function buildWidget(fastify: Fastify) {
           tools: [
             ...shadcnPass2.tools,
             {
-              name: 'set_widget_metadata',
-              description: 'Set the display name and one-sentence description for the widget.',
+              name: 'set_app_metadata',
+              description: 'Set the display name and one-sentence description for the app.',
               input_schema: {
                 type: 'object' as const,
                 properties: {
@@ -416,9 +416,9 @@ function buildWidget(fastify: Fastify) {
                 agentState.name = input.name as string
                 agentState.description = input.description as string
                 await fastify.db
-                  .update(widgets)
+                  .update(apps)
                   .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
-                  .where(eq(widgets.id, widgetId))
+                  .where(eq(apps.id, appId))
                 return { success: true }
               },
             },
@@ -446,9 +446,9 @@ function buildWidget(fastify: Fastify) {
       }
 
       await fastify.db
-        .update(widgets)
+        .update(apps)
         .set({ conversationHistory: finalMessages as unknown[], updatedAt: new Date() })
-        .where(eq(widgets.id, widgetId))
+        .where(eq(apps.id, appId))
 
       // -----------------------------------------------------------------------
       // PASS 2 — Polish (cached system prompt)
@@ -543,10 +543,10 @@ function buildWidget(fastify: Fastify) {
         }
       }
 
-      const [updated] = await fastify.db.select().from(widgets).where(eq(widgets.id, widgetId))
-      sendEvent('widget', updated)
+      const [updated] = await fastify.db.select().from(apps).where(eq(apps.id, appId))
+      sendEvent('app', updated)
     } catch (err) {
-      fastify.log.error(err, 'Widget build error')
+      fastify.log.error(err, 'app build error')
       sendEvent('error', { message: err instanceof Error ? err.message : 'Unknown error' })
     }
 
@@ -555,10 +555,10 @@ function buildWidget(fastify: Fastify) {
   })
 }
 
-function answerWidgetQuestion(fastify: Fastify) {
-  fastify.post<{ Body: { questionId: string; answer: string } }>('/widgets/answer', {
+function answerAppQuestion(fastify: Fastify) {
+  fastify.post<{ Body: { questionId: string; answer: string } }>('/apps/answer', {
     schema: {
-      tags: ['Widgets'],
+      tags: ['apps'],
       summary: 'Submit a user answer to a pending ask_user question',
       body: {
         type: 'object',
@@ -579,4 +579,4 @@ function answerWidgetQuestion(fastify: Fastify) {
   })
 }
 
-export default widgetsPlugin
+export default appsPlugin

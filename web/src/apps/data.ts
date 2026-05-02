@@ -1,4 +1,4 @@
-import type { WidgetSummary } from '@repo/data'
+import type { AppSummary } from '@repo/data'
 
 export type AppTint =
   | 'coral' | 'sage' | 'indigo' | 'amber' | 'plum' | 'graphite' | 'sky' | 'mint'
@@ -64,7 +64,7 @@ export function getAppTint(id: string): AppTint {
   return TINT_LIST[Math.abs(hash) % TINT_LIST.length]
 }
 
-export function widgetToAppCard(w: WidgetSummary): AppCard {
+export function widgetToAppCard(w: AppSummary): AppCard {
   return {
     id: w.id,
     name: w.name,
@@ -178,11 +178,4 @@ export const MARKETPLACE_APPS: MarketplaceApp[] = [
     installs: '2.1k',
     rating: 4.7,
   },
-]
-
-export const STARTER_PROMPTS = [
-  { title: 'A pomodoro timer', sub: 'with reflection prompts', glyph: '◑' },
-  { title: 'A meeting notes app', sub: 'paste a transcript', glyph: '✦' },
-  { title: 'A habit tracker', sub: 'gentle streaks', glyph: '✿' },
-  { title: 'A flashcard maker', sub: 'from any notes', glyph: '✦' },
 ]

@@ -1,20 +1,21 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import * as client from '@repo/data'
-import { Chrome } from './components/chrome'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppIcon } from './components/app-icon'
-import { WidgetPreview } from '../widgets/widget-preview'
-import { STARTER_PROMPTS, getAppGlyph, getAppTint } from './data'
+import { AppPreview } from './app-preview'
+import { getAppGlyph, getAppTint } from './data'
+import { SendHorizonal } from 'lucide-react'
 
 type ChatMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; streaming: boolean }
   | { role: 'tool'; name: string }
   | { role: 'question'; questionId: string; question: string; answered: boolean }
-
-type PreviewTab = 'preview' | 'source' | 'files'
-
-const BUILD_STEPS = ['Understand', 'Design', 'Build', 'Preview'] as const
 
 export function CreatePage() {
   const navigate = useNavigate()
@@ -23,43 +24,12 @@ export function CreatePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [compiledCode, setCompiledCode] = useState<string | null>(null)
   const [cssCode, setCssCode] = useState<string | null>(null)
-  const [sourceCode, setSourceCode] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
-  const [previewTab, setPreviewTab] = useState<PreviewTab>('preview')
-  const [buildStep, setBuildStep] = useState(0)
   const [initError, setInitError] = useState<string | null>(null)
-  const [splitPct, setSplitPct] = useState(30)
-  const [openFile, setOpenFile] = useState<{ name: string; content: string } | null>(null)
-  const isDragging = useRef(false)
-  const shellRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    isDragging.current = true
-    const handle = e.currentTarget as HTMLElement
-    handle.classList.add('dragging')
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!isDragging.current || !shellRef.current) return
-      const rect = shellRef.current.getBoundingClientRect()
-      const pct = ((ev.clientX - rect.left) / rect.width) * 100
-      setSplitPct(Math.min(Math.max(pct, 15), 75))
-    }
-
-    const onMouseUp = () => {
-      isDragging.current = false
-      handle.classList.remove('dragging')
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -77,12 +47,11 @@ export function CreatePage() {
 
     setInputValue('')
     setIsSending(true)
-    setBuildStep(1)
 
     let activeWidgetId = widgetId
     if (!activeWidgetId) {
       try {
-        const w = await client.createWidget('Untitled app')
+        const w = await client.createApp('Untitled app')
         activeWidgetId = w.id
         setWidgetId(w.id)
       } catch {
@@ -98,11 +67,8 @@ export function CreatePage() {
       { role: 'assistant', content: '', streaming: true },
     ])
 
-    setTimeout(() => setBuildStep(2), 400)
-    setTimeout(() => setBuildStep(3), 900)
-
     try {
-      const res = await client.buildWidget(activeWidgetId, msg)
+      const res = await client.buildApp(activeWidgetId, msg)
       if (!res.ok || !res.body) throw new Error(`Request failed: ${res.status}`)
 
       const reader = res.body.getReader()
@@ -122,10 +88,9 @@ export function CreatePage() {
         } else if (event === 'tool_call') {
           setMessages(prev => [...prev, { role: 'tool', name: (data as { name: string }).name }])
         } else if (event === 'widget') {
-          const w = data as client.Widget
+          const w = data as client.App
           setCompiledCode(w.compiledCode)
           setCssCode(w.cssCode)
-          setSourceCode(w.sourceCode)
           if (w.name && w.name !== 'Untitled app' && w.name !== 'Untitled Widget') {
             setAppName(w.name)
           }
@@ -137,7 +102,6 @@ export function CreatePage() {
             }
             return next
           })
-          setBuildStep(BUILD_STEPS.length)
         } else if (event === 'user_question') {
           const { questionId, question } = data as { questionId: string; question: string }
           setMessages(prev => [
@@ -175,7 +139,6 @@ export function CreatePage() {
     }
 
     setIsSending(false)
-    setBuildStep(BUILD_STEPS.length)
   }
 
   async function handleAnswerQuestion(questionId: string) {
@@ -192,87 +155,66 @@ export function CreatePage() {
       ),
       { role: 'user' as const, content: answer },
     ])
-    await client.answerWidgetQuestion(questionId, answer)
+    await client.answerAppQuestion(questionId, answer)
   }
 
   async function handleSave() {
     if (!widgetId || !compiledCode) return
-    await client.patchWidget(widgetId, { name: appName, status: 'published' })
+    await client.patchApp(widgetId, { name: appName, status: 'published' })
     navigate({ to: '/' })
   }
 
   if (initError) {
     return (
-      <div className="ma-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <p style={{ color: 'var(--ink-3)' }}>{initError}</p>
+      <div className="flex items-center justify-center h-screen bg-background text-foreground font-sans">
+        <p className="text-muted-foreground">{initError}</p>
       </div>
     )
   }
 
   return (
-    <div className="ma-page" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <Chrome active="create" />
-
-      <div
-        className="ma-create-shell"
-        ref={shellRef}
-        style={{ gridTemplateColumns: `${splitPct}fr 5px ${100 - splitPct}fr` }}
-      >
+    <div className="bg-background text-foreground font-sans antialiased flex flex-col h-screen">
+      <ResizablePanelGroup orientation="horizontal" >
         {/* Chat pane */}
-        <div className="ma-create-pane ma-create-chat">
-          <div className="ma-chat-header">
+        <ResizablePanel defaultSize='30%' minSize='15%' className="flex flex-col min-h-0 bg-card">
+          {/* Chat header */}
+          <div className="px-6 py-4 border-b border-border flex items-center gap-3.5 bg-card shrink-0">
             <AppIcon tint={currentTint} glyph={currentGlyph} size="sm" />
             <input
-              className="ma-chat-header-name"
+              className="text-base font-bold bg-transparent border-0 px-2 py-1 -mx-2 rounded-lg text-foreground font-sans outline-none w-65 tracking-[-0.01em] hover:bg-secondary focus:bg-secondary transition-colors"
               value={appName}
               onChange={e => setAppName(e.target.value)}
             />
-            <div style={{ flex: 1 }} />
-            <span className="ma-chat-header-status">
-              <span className="ma-status-dot" data-status={status} />
+            <div className="flex-1" />
+            <span className="text-[12.5px] font-medium text-muted-foreground inline-flex items-center gap-2">
+              <span
+                className={cn(
+                  'size-2 rounded-full',
+                  status === 'ready' && 'bg-[oklch(0.7_0.15_145)] shadow-[0_0_0_4px_oklch(0.7_0.15_145/0.18)]',
+                  status === 'thinking' && 'bg-[oklch(0.78_0.16_80)] shadow-[0_0_0_4px_oklch(0.78_0.16_80/0.22)]',
+                  status === 'draft' && 'bg-muted-foreground/40',
+                )}
+              />
               {statusLabel}
+              <Button size="sm" disabled={!compiledCode} onClick={handleSave}>
+                Add to library
+              </Button>
             </span>
           </div>
 
-          <div className="ma-chat-scroll" ref={scrollRef}>
+          {/* Chat scroll */}
+          <div className="flex-1 overflow-y-auto px-7 py-7 flex flex-col gap-5.5" ref={scrollRef}>
             {messages.length === 0 && (
               <div>
-                <div className="ma-chat-msg ma-chat-msg-claude">
-                  <div className="ma-chat-msg-avatar">C</div>
-                  <div className="ma-chat-msg-body">
-                    <div className="ma-chat-msg-name">Claude</div>
-                    <p>
-                      What should we build? Describe it like you'd describe it to a friend — I'll
-                      draft something and we can shape it together.
+                <div className="flex gap-3.5 max-w-full">
+                  <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
+                    C
+                  </div>
+                  <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
+                    <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">Claude</div>
+                    <p className="m-0">
+                      What should we build? Describe it — I'll draft something and we can shape it together.
                     </p>
-                  </div>
-                </div>
-                <div style={{ paddingLeft: 44, marginTop: 6 }}>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--ink-3)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      marginBottom: 6,
-                    }}
-                  >
-                    Or start from
-                  </div>
-                  <div className="ma-starter-grid">
-                    {STARTER_PROMPTS.map(p => (
-                      <button
-                        key={p.title}
-                        className="ma-starter-card"
-                        onClick={() => handleSend(`${p.title} — ${p.sub}`)}
-                      >
-                        <div className="ma-starter-glyph tint-amber">{p.glyph}</div>
-                        <div>
-                          <div className="ma-starter-title">{p.title}</div>
-                          <div className="ma-starter-sub">{p.sub}</div>
-                        </div>
-                      </button>
-                    ))}
                   </div>
                 </div>
               </div>
@@ -281,28 +223,32 @@ export function CreatePage() {
             {messages.map((m, i) => {
               if (m.role === 'user') {
                 return (
-                  <div key={i} className="ma-chat-msg ma-chat-msg-user">
-                    <div className="ma-chat-msg-avatar">You</div>
-                    <div className="ma-chat-msg-body">
-                      <div className="ma-chat-msg-name">You</div>
-                      <p>{m.content}</p>
+                  <div key={i} className="flex gap-3.5 max-w-full">
+                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-foreground text-background">
+                      You
+                    </div>
+                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
+                      <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">You</div>
+                      <p className="m-0">{m.content}</p>
                     </div>
                   </div>
                 )
               }
               if (m.role === 'assistant') {
                 return (
-                  <div key={i} className="ma-chat-msg ma-chat-msg-claude">
-                    <div className="ma-chat-msg-avatar">C</div>
-                    <div className="ma-chat-msg-body">
-                      <div className="ma-chat-msg-name">Claude</div>
+                  <div key={i} className="flex gap-3.5 max-w-full">
+                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
+                      C
+                    </div>
+                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
+                      <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">Claude</div>
                       {m.content ? (
-                        <p style={{ whiteSpace: 'pre-wrap' }}>{m.content}</p>
+                        <p className="m-0 whitespace-pre-wrap">{m.content}</p>
                       ) : m.streaming ? (
-                        <div className="ma-thinking-dots">
-                          <span />
-                          <span />
-                          <span />
+                        <div className="inline-flex gap-1.25 py-1.5">
+                          <span className="size-1.75 rounded-full bg-accent animate-thinking-dot" />
+                          <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-2" />
+                          <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-3" />
                         </div>
                       ) : null}
                     </div>
@@ -311,13 +257,22 @@ export function CreatePage() {
               }
               if (m.role === 'tool') {
                 return (
-                  <div key={i} className="ma-chat-msg ma-chat-msg-claude">
-                    <div className="ma-chat-msg-avatar">C</div>
-                    <div className="ma-chat-msg-body">
-                      <div className="ma-chat-msg-action">
-                        <span className="ma-chat-msg-action-icon">⚙</span>
-                        <span className="ma-chat-msg-action-label">{m.name}</span>
-                        <span className="ma-chat-msg-action-meta">running</span>
+                  <div key={i} className="flex gap-3.5 max-w-full">
+                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
+                      C
+                    </div>
+                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
+                      <div
+                        className="mt-0 px-4 py-3 flex items-center gap-3 text-sm rounded-xl border border-border"
+                        style={{ background: 'var(--warm)' }}
+                      >
+                        <span className="size-6.5 rounded-lg bg-accent text-accent-foreground grid place-items-center text-[13px] shrink-0">
+                          ⚙
+                        </span>
+                        <span className="flex-1 text-foreground font-medium">{m.name}</span>
+                        <span className="text-xs text-accent font-semibold bg-white/60 px-2 py-0.5 rounded-full">
+                          running
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -325,14 +280,16 @@ export function CreatePage() {
               }
               if (m.role === 'question') {
                 return (
-                  <div key={i} className="ma-chat-msg ma-chat-msg-claude">
-                    <div className="ma-chat-msg-avatar">C</div>
-                    <div className="ma-chat-msg-body" style={{ width: '100%' }}>
-                      <div className="ma-chat-msg-name">Claude</div>
-                      <p>{m.question}</p>
+                  <div key={i} className="flex gap-3.5 max-w-full">
+                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
+                      C
+                    </div>
+                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1 w-full">
+                      <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">Claude</div>
+                      <p className="m-0">{m.question}</p>
                       {!m.answered && (
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                          <input
+                        <div className="flex gap-2 mt-2">
+                          <Input
                             type="text"
                             value={questionAnswers[m.questionId] ?? ''}
                             onChange={e =>
@@ -348,26 +305,16 @@ export function CreatePage() {
                               }
                             }}
                             placeholder="Your answer…"
-                            style={{
-                              flex: 1,
-                              border: '1.5px solid var(--line-2)',
-                              borderRadius: 8,
-                              padding: '8px 12px',
-                              fontSize: 14,
-                              fontFamily: 'var(--font-jakarta)',
-                              background: 'var(--bg)',
-                              color: 'var(--ink)',
-                              outline: 'none',
-                            }}
+                            className="flex-1"
                             autoFocus
                           />
-                          <button
-                            className="ma-btn ma-btn-primary ma-btn-sm"
+                          <Button
+                            size="sm"
                             onClick={() => handleAnswerQuestion(m.questionId)}
                             disabled={!(questionAnswers[m.questionId] ?? '').trim()}
                           >
                             Answer
-                          </button>
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -380,182 +327,70 @@ export function CreatePage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="ma-chat-composer">
-            <div className="ma-composer-box">
-              <textarea
+          {/* Chat composer */}
+          <div className="px-5 py-4 pb-5 border-border bg-card shrink-0">
+            <div className="bg-card border-[1.5px] border-input rounded-2xl px-4 pt-3.5 pb-3">
+              <Textarea
                 rows={1}
                 placeholder={
                   messages.length === 0
-                    ? 'Describe your mini app…'
+                    ? 'Describe your app…'
                     : 'Ask Claude to change something…'
                 }
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key === 'Enter' && e.metaKey) {
                     e.preventDefault()
                     handleSend()
                   }
                 }}
                 disabled={isSending}
+                className="min-h-7 max-h-40 border-0 resize-none font-sans border-none focus:border-0 focus-visible:ring-0"
               />
-              <div className="ma-composer-bar">
-                <div className="ma-composer-tools">
-                  <button className="ma-composer-tool" title="Attach">
-                    +
-                  </button>
-                  <button className="ma-composer-tool" title="Templates">
-                    ▦
-                  </button>
-                </div>
-                <button
-                  className="ma-composer-send"
+              <div className="flex items-center gap-1.5 mt-2">
+                <div className="flex-1"></div>
+                <Button
+                  size='sm'
                   disabled={!inputValue.trim() || isSending}
                   onClick={() => handleSend()}
                 >
-                  ↑
-                </button>
+                  <SendHorizonal />
+                  Send
+                </Button>
               </div>
             </div>
           </div>
-        </div>
+        </ResizablePanel>
 
-        {/* Resize handle */}
-        <div className="ma-resize-handle" onMouseDown={handleResizeStart} />
+        <ResizableHandle withHandle />
 
         {/* Preview pane */}
-        <div className="ma-create-pane ma-create-preview">
-          <div className="ma-preview-toolbar">
-            <div className="ma-preview-tabs">
-              <button
-                className="ma-preview-tab"
-                data-active={previewTab === 'preview' ? '1' : '0'}
-                onClick={() => { setPreviewTab('preview'); setOpenFile(null) }}
-              >
-                ● Preview
-              </button>
-              <button
-                className="ma-preview-tab"
-                data-active={previewTab === 'source' ? '1' : '0'}
-                onClick={() => { setPreviewTab('source'); setOpenFile(null) }}
-              >
-                ◧ Source
-              </button>
-              <button
-                className="ma-preview-tab"
-                data-active={previewTab === 'files' ? '1' : '0'}
-                onClick={() => setPreviewTab('files')}
-              >
-                ⊞ Files
-              </button>
-            </div>
-            <div style={{ flex: 1 }} />
-            <button className="ma-btn ma-btn-ghost ma-btn-sm" disabled={!compiledCode}>
-              Open
-            </button>
-            <button className="ma-btn ma-btn-secondary ma-btn-sm" disabled={!compiledCode}>
-              Share
-            </button>
-            <button
-              className="ma-btn ma-btn-primary ma-btn-sm"
-              disabled={!compiledCode}
-              onClick={handleSave}
-            >
-              Save to library
-            </button>
-          </div>
-
-          <div className="ma-preview-stage">
-            {!compiledCode ? (
-              <div className="ma-preview-empty">
-                <div className="ma-preview-empty-mark">◌</div>
-                <h3 className="ma-preview-empty-title">Your app will appear here</h3>
-                <p className="ma-preview-empty-sub">
+        <ResizablePanel defaultSize='70%' className="flex flex-col min-h-0 relative overflow-hidden" style={{ background: 'var(--warm)' } as React.CSSProperties}>
+          {!compiledCode ? (
+            <div className="flex-1 flex items-center justify-center p-9 overflow-auto">
+              <div className="flex flex-col items-center text-center gap-4 px-8 py-15 text-muted-foreground">
+                <div className="size-16 rounded-[18px] bg-card border-[1.5px] border-dashed border-input grid place-items-center text-[26px] text-foreground/30">
+                  ◌
+                </div>
+                <h3 className="text-lg font-bold text-foreground m-0 tracking-[-0.01em]">
+                  Your app will appear here
+                </h3>
+                <p className="text-sm text-muted-foreground max-w-85 leading-[1.55] m-0">
                   Send a message to Claude. As you chat, the preview updates in real time — try a
                   few things, then save it to your library.
                 </p>
               </div>
-            ) : previewTab === 'preview' ? (
+            </div>
+          ) : (
+            <div className="flex-1 overflow-auto">
               <div className="w-full">
-                <WidgetPreview compiledCode={compiledCode} cssCode={cssCode} />
+                <AppPreview compiledCode={compiledCode} cssCode={cssCode} />
               </div>
-            ) : previewTab === 'source' ? (
-              <div className="ma-preview-frame" style={{ padding: 20 }}>
-                <pre
-                  style={{
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                    color: 'var(--ink-2)',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all',
-                    margin: 0,
-                  }}
-                >
-                  {sourceCode ?? 'No source code yet'}
-                </pre>
-              </div>
-            ) : openFile ? (
-              <div className="ma-file-viewer">
-                <div className="ma-file-viewer-header">
-                  <button className="ma-file-viewer-back" onClick={() => setOpenFile(null)}>← Files</button>
-                  <span className="ma-file-viewer-name">{openFile.name}</span>
-                </div>
-                <pre className="ma-file-viewer-body">{openFile.content}</pre>
-              </div>
-            ) : (
-              <div className="ma-file-tree">
-                <div className="ma-file-tree-row ma-file-tree-dir">
-                  <span className="ma-file-tree-icon">▾</span>
-                  <span className="ma-file-tree-name">widget/</span>
-                </div>
-                {sourceCode && (
-                  <div className="ma-file-tree-row" onClick={() => setOpenFile({ name: 'widget.tsx', content: sourceCode })} style={{ cursor: 'pointer' }}>
-                    <span className="ma-file-tree-indent" />
-                    <span className="ma-file-tree-icon ma-file-tree-icon-tsx">tsx</span>
-                    <span className="ma-file-tree-name">widget.tsx</span>
-                    <span className="ma-file-tree-size">{(sourceCode.length / 1024).toFixed(1)} KB</span>
-                  </div>
-                )}
-                {cssCode && (
-                  <div className="ma-file-tree-row" onClick={() => setOpenFile({ name: 'widget.css', content: cssCode })} style={{ cursor: 'pointer' }}>
-                    <span className="ma-file-tree-indent" />
-                    <span className="ma-file-tree-icon ma-file-tree-icon-css">css</span>
-                    <span className="ma-file-tree-name">widget.css</span>
-                    <span className="ma-file-tree-size">{(cssCode.length / 1024).toFixed(1)} KB</span>
-                  </div>
-                )}
-                {!sourceCode && !cssCode && (
-                  <div style={{ padding: '32px 24px', color: 'var(--ink-4)', fontSize: 13, textAlign: 'center' }}>
-                    No files yet — send a message to build your widget.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="ma-build-log">
-            {BUILD_STEPS.map((s, i) => (
-              <span
-                key={s}
-                className="ma-build-log-step"
-                data-state={
-                  i < buildStep
-                    ? 'done'
-                    : i === buildStep && isSending
-                      ? 'active'
-                      : 'pending'
-                }
-              >
-                {s}
-              </span>
-            ))}
-            <span style={{ flex: 1 }} />
-            <span style={{ color: 'var(--ink-4)' }}>
-              {messages.filter(m => m.role === 'assistant').length} edits
-            </span>
-          </div>
-        </div>
-      </div>
+            </div>
+          )}
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   )
 }
