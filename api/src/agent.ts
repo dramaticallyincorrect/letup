@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { Model } from '@anthropic-ai/sdk/resources'
 
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
 export type AgentTool = Anthropic.Tool & {
   handler: (input: Record<string, unknown>) => Promise<unknown>
 }
@@ -15,6 +17,26 @@ export type SystemPrompt =
  */
 export function cached(text: string): Array<{ type: 'text'; text: string; cache_control: { type: 'ephemeral' } }> {
   return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }]
+}
+
+/**
+ * Adds cache_control: { type: 'ephemeral' } to the last content block of the
+ * last message. Use this to mark prior conversation context as cacheable before
+ * appending a new user turn (e.g. refinement history loaded from DB).
+ */
+export function markLastTurnCacheable(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  if (messages.length === 0) return messages
+  const result = [...messages]
+  const last = { ...result[result.length - 1] }
+  if (typeof last.content === 'string') {
+    last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }]
+  } else if (Array.isArray(last.content) && last.content.length > 0) {
+    const blocks = [...last.content]
+    blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: { type: 'ephemeral' } } as typeof blocks[0]
+    last.content = blocks
+  }
+  result[result.length - 1] = last
+  return result
 }
 
 /**
@@ -45,8 +67,15 @@ export async function runAgentLoop(params: {
     onToolCall,
   } = params
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const sdkTools: Anthropic.Tool[] = tools.map(({ handler: _h, ...t }) => t)
+
+  // Cache the last tool definition so all tool schemas are cached together.
+  if (sdkTools.length > 0) {
+    sdkTools[sdkTools.length - 1] = {
+      ...sdkTools[sdkTools.length - 1],
+      cache_control: { type: 'ephemeral' },
+    } as Anthropic.Tool
+  }
 
   console.log(`[agent] starting loop — model=${model} tools=[${tools.map(t => t.name).join(',')}]`)
 
@@ -94,7 +123,7 @@ export async function runAgentLoop(params: {
     }
 
     const finalMessage = await stream.finalMessage()
-    console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size}`)
+    console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size} usage=${JSON.stringify(finalMessage.usage)}`)
 
     if (finalMessage.stop_reason === 'max_tokens') {
       throw new Error('Claude response exceeded max_tokens limit')

@@ -7,7 +7,7 @@ import { desc, eq } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps } from '../db/schema'
-import { runAgentLoop, cached } from '../agent'
+import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
 import { createShadcnMcpTools } from '../shadcnMcp'
 import { Fastify } from '../fastify_type'
 
@@ -283,8 +283,10 @@ function buildApp(fastify: Fastify) {
     }
 
     const history = (Array.isArray(app.conversationHistory) ? app.conversationHistory : []) as Anthropic.MessageParam[]
-    const messages: Anthropic.MessageParam[] = [...history, { role: 'user', content: userMessage }]
     const isRefinement = history.length > 0
+    // Cache the prior conversation so re-sent history is not re-billed on refinement.
+    const cachedHistory = isRefinement ? markLastTurnCacheable(history) : history
+    const messages: Anthropic.MessageParam[] = [...cachedHistory, { role: 'user', content: userMessage }]
 
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
       try {
@@ -487,7 +489,10 @@ function buildApp(fastify: Fastify) {
           messages: [
             {
               role: 'user',
-              content: `Design plan:\n${designPlan}\n\nOriginal request: "${userMessage}"\n\nCurrent files:\n${filesSummary}\n\nPolish the UI — keep all functionality identical. Use CSS variables from styles.css throughout. Do NOT modify styles.css.`,
+              content: [
+                { type: 'text', text: `Design plan:\n${designPlan}\n\nOriginal request: "${userMessage}"\n\nCurrent files:\n${filesSummary}`, cache_control: { type: 'ephemeral' } },
+                { type: 'text', text: 'Polish the UI — keep all functionality identical. Use CSS variables from styles.css throughout. Do NOT modify styles.css.' },
+              ],
             },
           ],
           tools: [writeFileTool, readFileTool, listFilesTool],
@@ -519,7 +524,7 @@ function buildApp(fastify: Fastify) {
           .join('\n\n')
 
         const criticMessages = await runAgentLoop({
-          messages: [{ role: 'user', content: filesSummary }],
+          messages: [{ role: 'user', content: [{ type: 'text', text: filesSummary, cache_control: { type: 'ephemeral' } }] }],
           system: CRITIC_SYSTEM,
           maxTokens: 512,
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
@@ -545,7 +550,10 @@ function buildApp(fastify: Fastify) {
             messages: [
               {
                 role: 'user',
-                content: `The following design issues were found:\n${criticOutput}\n\nFix only these specific issues in the relevant files. Keep everything else unchanged.\n\nCurrent files:\n${currentFilesSummary}`,
+                content: [
+                  { type: 'text', text: `Current files:\n${currentFilesSummary}`, cache_control: { type: 'ephemeral' } },
+                  { type: 'text', text: `The following design issues were found:\n${criticOutput}\n\nFix only these specific issues in the relevant files. Keep everything else unchanged.` },
+                ],
               },
             ],
             tools: [writeFileTool, readFileTool, listFilesTool],
