@@ -246,8 +246,8 @@ export function CreatePageInner({
                       You
                     </div>
                     <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
-                      <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">You</div>
-                      <p className="m-0">{m.content}</p>
+                      <div className="text-[12.5px] text-muted-foreground font-bold mb-1">You</div>
+                      <p className="m-0 font-light  text-sm">{m.content}</p>
                     </div>
                   </div>
                 )
@@ -259,9 +259,9 @@ export function CreatePageInner({
                       C
                     </div>
                     <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
-                      <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">Claude</div>
+                      <div className="text-[12.5px] text-muted-foreground font-bold mb-1">Claude</div>
                       {m.content ? (
-                        <p className="m-0 whitespace-pre-wrap">{m.content}</p>
+                        <p className="m-0 whitespace-pre-wrap font-light text-sm">{m.content}</p>
                       ) : m.streaming ? (
                         <div className="inline-flex gap-1.25 py-1.5">
                           <span className="size-1.75 rounded-full bg-accent animate-thinking-dot" />

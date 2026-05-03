@@ -15,8 +15,6 @@ import { Fastify } from '../fastify_type'
 const PLAN_SYSTEM          = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
 const DESIGN_SYSTEM_PROMPT = cached(readFileSync(join(__dirname, '../prompts/app-design-system.md'), 'utf8'))
 const BUILD_SYSTEM         = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
-const POLISH_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/app-polish.md'), 'utf8'))
-const CRITIC_SYSTEM        = cached(readFileSync(join(__dirname, '../prompts/app-critic.md'), 'utf8'))
 
 // Deferred promises waiting for user answers, keyed by question ID
 const pendingQuestions = new Map<string, (answer: string) => void>()
@@ -222,6 +220,22 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
   return result.outputFiles[0].text
 }
 
+// Removes cache_control from every content block so it doesn't accumulate in DB
+// across refinements (each refinement re-applies it transiently via markLastTurnCacheable).
+function stripCacheControl(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  return messages.map(msg => {
+    if (typeof msg.content === 'string') return msg
+    const content = (msg.content as unknown as Array<Record<string, unknown>>).map(block => {
+      if ('cache_control' in block) {
+        const { cache_control: _cc, ...rest } = block
+        return rest
+      }
+      return block
+    })
+    return { ...msg, content } as unknown as Anthropic.MessageParam
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Extract plain text from a completed agent loop's final assistant message
 // ---------------------------------------------------------------------------
@@ -368,15 +382,16 @@ function buildApp(fastify: Fastify) {
         // -----------------------------------------------------------------------
         // PASS 0 — Plan (with ask_user tool for clarification)
         // -----------------------------------------------------------------------
-        sendEvent('text', { text: '**Planning the design…**\n\n' })
+        // sendEvent('text', { text: '**Planning the design…**\n\n' })
 
         const planMessages = await runAgentLoop({
           messages: [{ role: 'user', content: userMessage }],
           tools: [askUserTool],
           system: PLAN_SYSTEM,
-          maxTokens: 2048,
+          maxTokens: 2048 * 4,
+          thinking: { budget_tokens: 1024 * 3 },
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onText: (delta) => sendEvent('text', { text: delta }),
+          onThinking: (delta) => sendEvent('text', { text: delta }),
           onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
         })
         designPlan = extractText(planMessages)
@@ -384,28 +399,28 @@ function buildApp(fastify: Fastify) {
         // -----------------------------------------------------------------------
         // PASS 1 — Design System (creates styles.css)
         // -----------------------------------------------------------------------
-        sendEvent('text', { text: '\n\n---\n\n**Creating design system…**\n\n' })
+        // sendEvent('text', { text: '\n\n---\n\n**Creating design system…**\n\n' })
 
         const shadcnPass1 = await createShadcnMcpTools()
-        try {
-          await runAgentLoop({
-            messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this app.` }],
-            tools: [...shadcnPass1.tools, writeFileTool],
-            system: DESIGN_SYSTEM_PROMPT,
-            maxTokens: 16000,
-            thinking: { budget_tokens: 8000 },
-            ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-            onText: (delta) => sendEvent('text', { text: delta }),
-            onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-          })
-        } finally {
-          await shadcnPass1.close()
-        }
+        // try {
+        //   await runAgentLoop({
+        //     messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this app.` }],
+        //     tools: [...shadcnPass1.tools, writeFileTool],
+        //     system: DESIGN_SYSTEM_PROMPT,
+        //     maxTokens: 16000,
+        //     thinking: { budget_tokens: 8000 },
+        //     ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+        //     onThinking: (delta) => sendEvent('text', { text: delta }),
+        //     onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+        //   })
+        // } finally {
+        //   await shadcnPass1.close()
+        // }
       }
 
       const designSystemCSS = virtualFiles.get('styles.css') ?? ''
 
-      sendEvent('text', { text: isRefinement ? '**Updating the app…**\n\n' : '\n\n---\n\n**Building the app…**\n\n' })
+      // sendEvent('text', { text: isRefinement ? '**Updating the app…**\n\n' : '\n\n---\n\n**Building the app…**\n\n' })
 
       // -----------------------------------------------------------------------
       // PASS 2 — Build (extended thinking + cached system prompt)
@@ -413,7 +428,7 @@ function buildApp(fastify: Fastify) {
       const buildUserMessage = isRefinement
         ? userMessage
         : (designPlan
-            ? `Design plan:\n${designPlan}\n\nDesign system (styles.css already written — use its CSS variables):\n\`\`\`css\n${designSystemCSS}\n\`\`\`\n\nUser request: ${userMessage}`
+            ? `Execute this plan and build the website:${designPlan}\n\n`
             : userMessage)
 
       let finalMessages: Anthropic.MessageParam[] = []
@@ -452,7 +467,7 @@ function buildApp(fastify: Fastify) {
           maxTokens: 16000,
           thinking: { budget_tokens: 8000 },
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onText: (delta) => sendEvent('text', { text: delta }),
+          onThinking: (delta) => sendEvent('text', { text: delta }),
           onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
         })
       } finally {
@@ -469,107 +484,110 @@ function buildApp(fastify: Fastify) {
 
       await fastify.db
         .update(apps)
-        .set({ conversationHistory: finalMessages as unknown[], updatedAt: new Date() })
+        .set({ conversationHistory: stripCacheControl(finalMessages) as unknown[], updatedAt: new Date() })
         .where(eq(apps.id, appId))
 
-      // -----------------------------------------------------------------------
-      // PASS 3 — Polish (cached system prompt) — first build only
-      // -----------------------------------------------------------------------
-      if (!isRefinement && virtualFiles.size > 0) {
-        sendEvent('text', { text: '\n\n**Polishing the UI…**\n\n' })
+      // // -----------------------------------------------------------------------
+      // // PASS 3 — Polish (cached system prompt) — first build only
+      // // -----------------------------------------------------------------------
+      // if (!isRefinement && virtualFiles.size > 0) {
+      //   // sendEvent('text', { text: '\n\n**Polishing the UI…**\n\n' })
 
-        const filesSummary = [...virtualFiles.entries()]
-          .map(([path, content]) => {
-            const lang = path.endsWith('.css') ? 'css' : 'tsx'
-            return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
-          })
-          .join('\n\n')
+      //   const filesSummary = [...virtualFiles.entries()]
+      //     .map(([path, content]) => {
+      //       const lang = path.endsWith('.css') ? 'css' : 'tsx'
+      //       return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
+      //     })
+      //     .join('\n\n')
 
-        await runAgentLoop({
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: `Design plan:\n${designPlan}\n\nOriginal request: "${userMessage}"\n\nCurrent files:\n${filesSummary}`, cache_control: { type: 'ephemeral' } },
-                { type: 'text', text: 'Polish the UI — keep all functionality identical. Use CSS variables from styles.css throughout. Do NOT modify styles.css.' },
-              ],
-            },
-          ],
-          tools: [writeFileTool, readFileTool, listFilesTool],
-          system: POLISH_SYSTEM,
-          maxTokens: 16000,
-          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onText: (delta) => sendEvent('text', { text: delta }),
-          onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-        })
+      //   await runAgentLoop({
+      //     messages: [
+      //       {
+      //         role: 'user',
+      //         content: [
+      //           { type: 'text', text: `Design plan:\n${designPlan}\n\nOriginal request: "${userMessage}"\n\nCurrent files:\n${filesSummary}`, cache_control: { type: 'ephemeral' } },
+      //           { type: 'text', text: 'Polish the UI — keep all functionality identical. Use CSS variables from styles.css throughout. Do NOT modify styles.css.' },
+      //         ],
+      //       },
+      //     ],
+      //     tools: [writeFileTool, readFileTool, listFilesTool],
+      //     system: POLISH_SYSTEM,
+      //     maxTokens: 16000,
+      //     thinking: { budget_tokens: 8000 },
+      //     ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+      //     onThinking: (delta) => sendEvent('text', { text: delta }),
+      //     onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+      //   })
 
-        // Compile after polish
-        const polishCompileResult = await compileAndPersist()
-        if ('error' in polishCompileResult) {
-          sendEvent('error', { message: `Polish compile error: ${polishCompileResult.error}` })
-        }
-      }
+      //   // Compile after polish
+      //   const polishCompileResult = await compileAndPersist()
+      //   if ('error' in polishCompileResult) {
+      //     sendEvent('error', { message: `Polish compile error: ${polishCompileResult.error}` })
+      //   }
+      // }
 
       // -----------------------------------------------------------------------
       // PASS 4 — Critic (no tools, cached system prompt, silent) — first build only
       // -----------------------------------------------------------------------
-      if (!isRefinement && virtualFiles.size > 0) {
-        sendEvent('text', { text: '\n\n**Quality check…**\n\n' })
+      // if (!isRefinement && virtualFiles.size > 0) {
+      //   // sendEvent('text', { text: '\n\n**Quality check…**\n\n' })
 
-        const filesSummary = [...virtualFiles.entries()]
-          .map(([path, content]) => {
-            const lang = path.endsWith('.css') ? 'css' : 'tsx'
-            return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
-          })
-          .join('\n\n')
+      //   const filesSummary = [...virtualFiles.entries()]
+      //     .map(([path, content]) => {
+      //       const lang = path.endsWith('.css') ? 'css' : 'tsx'
+      //       return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
+      //     })
+      //     .join('\n\n')
 
-        const criticMessages = await runAgentLoop({
-          messages: [{ role: 'user', content: [{ type: 'text', text: filesSummary, cache_control: { type: 'ephemeral' } }] }],
-          system: CRITIC_SYSTEM,
-          maxTokens: 512,
-          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onText: (delta) => sendEvent('text', { text: delta }),
-        })
+      //   const criticMessages = await runAgentLoop({
+      //     messages: [{ role: 'user', content: [{ type: 'text', text: filesSummary, cache_control: { type: 'ephemeral' } }] }],
+      //     system: CRITIC_SYSTEM,
+      //     maxTokens: 4096,
+      //     thinking: { budget_tokens: 2048 },
+      //     ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+      //     onThinking: (delta) => sendEvent('text', { text: delta }),
+      //   })
 
-        const criticOutput = extractText(criticMessages).trim()
+      //   const criticOutput = extractText(criticMessages).trim()
 
-        // -----------------------------------------------------------------------
-        // PASS 4 — Fix (only if critic found issues)
-        // -----------------------------------------------------------------------
-        if (criticOutput && criticOutput !== 'PASS') {
-          sendEvent('text', { text: '\n\n**Fixing identified issues…**\n\n' })
+      //   // -----------------------------------------------------------------------
+      //   // PASS 4 — Fix (only if critic found issues)
+      //   // -----------------------------------------------------------------------
+      //   if (criticOutput && criticOutput !== 'PASS') {
+      //     // sendEvent('text', { text: '\n\n**Fixing identified issues…**\n\n' })
 
-          const currentFilesSummary = [...virtualFiles.entries()]
-            .map(([path, content]) => {
-              const lang = path.endsWith('.css') ? 'css' : 'tsx'
-              return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
-            })
-            .join('\n\n')
+      //     const currentFilesSummary = [...virtualFiles.entries()]
+      //       .map(([path, content]) => {
+      //         const lang = path.endsWith('.css') ? 'css' : 'tsx'
+      //         return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
+      //       })
+      //       .join('\n\n')
 
-          await runAgentLoop({
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: `Current files:\n${currentFilesSummary}`, cache_control: { type: 'ephemeral' } },
-                  { type: 'text', text: `The following design issues were found:\n${criticOutput}\n\nFix only these specific issues in the relevant files. Keep everything else unchanged.` },
-                ],
-              },
-            ],
-            tools: [writeFileTool, readFileTool, listFilesTool],
-            system: POLISH_SYSTEM,
-            maxTokens: 16000,
-            ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-            onText: (delta) => sendEvent('text', { text: delta }),
-            onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-          })
+      //     await runAgentLoop({
+      //       messages: [
+      //         {
+      //           role: 'user',
+      //           content: [
+      //             { type: 'text', text: `Current files:\n${currentFilesSummary}`, cache_control: { type: 'ephemeral' } },
+      //             { type: 'text', text: `The following design issues were found:\n${criticOutput}\n\nFix only these specific issues in the relevant files. Keep everything else unchanged.` },
+      //           ],
+      //         },
+      //       ],
+      //       tools: [writeFileTool, readFileTool, listFilesTool],
+      //       system: POLISH_SYSTEM,
+      //       maxTokens: 16000,
+      //       thinking: { budget_tokens: 8000 },
+      //       ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+      //       onThinking: (delta) => sendEvent('text', { text: delta }),
+      //       onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+      //     })
 
-          const fixCompileResult = await compileAndPersist()
-          if ('error' in fixCompileResult) {
-            sendEvent('error', { message: `Fix compile error: ${fixCompileResult.error}` })
-          }
-        }
-      }
+      //     const fixCompileResult = await compileAndPersist()
+      //     if ('error' in fixCompileResult) {
+      //       sendEvent('error', { message: `Fix compile error: ${fixCompileResult.error}` })
+      //     }
+      //   }
+      // }
 
       const [updated] = await fastify.db.select().from(apps).where(eq(apps.id, appId))
       sendEvent('widget', updated)

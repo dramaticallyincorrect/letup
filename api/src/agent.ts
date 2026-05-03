@@ -53,7 +53,8 @@ export async function runAgentLoop(params: {
   maxTokens?: number
   /** Enable extended thinking. budget_tokens must be < maxTokens. */
   thinking?: { budget_tokens: number }
-  onText: (delta: string) => void
+  onText?: (delta: string) => void
+  onThinking?: (delta: string) => void
   onToolCall?: (name: string, input: unknown, result: unknown) => void
 }): Promise<Anthropic.MessageParam[]> {
   const {
@@ -64,6 +65,7 @@ export async function runAgentLoop(params: {
     maxTokens = 16000,
     thinking,
     onText,
+    onThinking,
     onToolCall,
   } = params
 
@@ -113,12 +115,13 @@ export async function runAgentLoop(params: {
         }
       } else if (event.type === 'content_block_delta') {
         if (event.delta.type === 'text_delta') {
-          onText(event.delta.text)
+          onText?.(event.delta.text)
+        } else if (event.delta.type === 'thinking_delta') {
+          onThinking?.(event.delta.thinking)
         } else if (event.delta.type === 'input_json_delta') {
           const block = toolUseBlocks.get(event.index)
           if (block) block.inputJson += event.delta.partial_json
         }
-        // thinking_delta is intentionally ignored — internal reasoning only
       }
     }
 
@@ -129,10 +132,9 @@ export async function runAgentLoop(params: {
       throw new Error('Claude response exceeded max_tokens limit')
     }
 
-    if (toolUseBlocks.size > 0) {
-      // Local tool calls pending — execute them and continue the loop.
-      messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
+    messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
 
+    if (toolUseBlocks.size > 0) {
       const toolResults: Anthropic.ToolResultBlockParam[] = []
 
       for (const block of toolUseBlocks.values()) {
