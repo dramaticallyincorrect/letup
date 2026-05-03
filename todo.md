@@ -5,7 +5,7 @@ a marketplace for user created app
 ## minimal core
 1. create app
    1. ~~polished ui~~
-   2. chat history
+   2. ~~chat history~~
    3. data access
    4. ~~agent access~~
    5. usage

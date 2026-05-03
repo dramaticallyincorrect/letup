@@ -25,6 +25,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   listApps(fastify)
   createApp(fastify)
   getApp(fastify)
+  getAppForEdit(fastify)
   patchApp(fastify)
   deleteApp(fastify)
   buildApp(fastify)
@@ -82,6 +83,29 @@ function createApp(fastify: Fastify) {
 function getApp(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId', {
     schema: { tags: ['apps'], summary: 'Get an app by ID' },
+  }, async (request, reply) => {
+    const [app] = await fastify.db
+      .select({
+        id: apps.id,
+        name: apps.name,
+        description: apps.description,
+        status: apps.status,
+        sourceCode: apps.sourceCode,
+        compiledCode: apps.compiledCode,
+        cssCode: apps.cssCode,
+        createdAt: apps.createdAt,
+        updatedAt: apps.updatedAt,
+      })
+      .from(apps)
+      .where(eq(apps.id, request.params.appId))
+    if (!app) return reply.code(404).send({ error: 'app not found' })
+    return reply.send(app)
+  })
+}
+
+function getAppForEdit(fastify: Fastify) {
+  fastify.get<{ Params: { appId: string } }>('/apps/:appId/edit', {
+    schema: { tags: ['apps'], summary: 'Get an app by ID including conversation history' },
   }, async (request, reply) => {
     const [app] = await fastify.db
       .select()
@@ -260,6 +284,7 @@ function buildApp(fastify: Fastify) {
 
     const history = (Array.isArray(app.conversationHistory) ? app.conversationHistory : []) as Anthropic.MessageParam[]
     const messages: Anthropic.MessageParam[] = [...history, { role: 'user', content: userMessage }]
+    const isRefinement = history.length > 0
 
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
       try {
@@ -335,53 +360,59 @@ function buildApp(fastify: Fastify) {
     }
 
     try {
-      // -----------------------------------------------------------------------
-      // PASS 0 — Plan (with ask_user tool for clarification)
-      // -----------------------------------------------------------------------
-      sendEvent('text', { text: '**Planning the design…**\n\n' })
+      let designPlan = ''
 
-      const planMessages = await runAgentLoop({
-        messages: [{ role: 'user', content: userMessage }],
-        tools: [askUserTool],
-        system: PLAN_SYSTEM,
-        maxTokens: 2048,
-        ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-        onText: (delta) => sendEvent('text', { text: delta }),
-        onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-      })
-      const designPlan = extractText(planMessages)
+      if (!isRefinement) {
+        // -----------------------------------------------------------------------
+        // PASS 0 — Plan (with ask_user tool for clarification)
+        // -----------------------------------------------------------------------
+        sendEvent('text', { text: '**Planning the design…**\n\n' })
 
-      // -----------------------------------------------------------------------
-      // PASS 1 — Design System (creates styles.css)
-      // -----------------------------------------------------------------------
-      sendEvent('text', { text: '\n\n---\n\n**Creating design system…**\n\n' })
-
-      const shadcnPass1 = await createShadcnMcpTools()
-      try {
-        await runAgentLoop({
-          messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this app.` }],
-          tools: [...shadcnPass1.tools, writeFileTool],
-          system: DESIGN_SYSTEM_PROMPT,
-          maxTokens: 16000,
-          thinking: { budget_tokens: 8000 },
+        const planMessages = await runAgentLoop({
+          messages: [{ role: 'user', content: userMessage }],
+          tools: [askUserTool],
+          system: PLAN_SYSTEM,
+          maxTokens: 2048,
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
           onText: (delta) => sendEvent('text', { text: delta }),
           onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
         })
-      } finally {
-        await shadcnPass1.close()
+        designPlan = extractText(planMessages)
+
+        // -----------------------------------------------------------------------
+        // PASS 1 — Design System (creates styles.css)
+        // -----------------------------------------------------------------------
+        sendEvent('text', { text: '\n\n---\n\n**Creating design system…**\n\n' })
+
+        const shadcnPass1 = await createShadcnMcpTools()
+        try {
+          await runAgentLoop({
+            messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this app.` }],
+            tools: [...shadcnPass1.tools, writeFileTool],
+            system: DESIGN_SYSTEM_PROMPT,
+            maxTokens: 16000,
+            thinking: { budget_tokens: 8000 },
+            ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+            onText: (delta) => sendEvent('text', { text: delta }),
+            onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+          })
+        } finally {
+          await shadcnPass1.close()
+        }
       }
 
       const designSystemCSS = virtualFiles.get('styles.css') ?? ''
 
-      sendEvent('text', { text: '\n\n---\n\n**Building the app…**\n\n' })
+      sendEvent('text', { text: isRefinement ? '**Updating the app…**\n\n' : '\n\n---\n\n**Building the app…**\n\n' })
 
       // -----------------------------------------------------------------------
       // PASS 2 — Build (extended thinking + cached system prompt)
       // -----------------------------------------------------------------------
-      const buildUserMessage = designPlan
-        ? `Design plan:\n${designPlan}\n\nDesign system (styles.css already written — use its CSS variables):\n\`\`\`css\n${designSystemCSS}\n\`\`\`\n\nUser request: ${userMessage}`
-        : userMessage
+      const buildUserMessage = isRefinement
+        ? userMessage
+        : (designPlan
+            ? `Design plan:\n${designPlan}\n\nDesign system (styles.css already written — use its CSS variables):\n\`\`\`css\n${designSystemCSS}\n\`\`\`\n\nUser request: ${userMessage}`
+            : userMessage)
 
       let finalMessages: Anthropic.MessageParam[] = []
       const shadcnPass2 = await createShadcnMcpTools()
@@ -440,9 +471,9 @@ function buildApp(fastify: Fastify) {
         .where(eq(apps.id, appId))
 
       // -----------------------------------------------------------------------
-      // PASS 2 — Polish (cached system prompt)
+      // PASS 3 — Polish (cached system prompt) — first build only
       // -----------------------------------------------------------------------
-      if (virtualFiles.size > 0) {
+      if (!isRefinement && virtualFiles.size > 0) {
         sendEvent('text', { text: '\n\n**Polishing the UI…**\n\n' })
 
         const filesSummary = [...virtualFiles.entries()]
@@ -475,9 +506,9 @@ function buildApp(fastify: Fastify) {
       }
 
       // -----------------------------------------------------------------------
-      // PASS 3 — Critic (no tools, cached system prompt, silent)
+      // PASS 4 — Critic (no tools, cached system prompt, silent) — first build only
       // -----------------------------------------------------------------------
-      if (virtualFiles.size > 0) {
+      if (!isRefinement && virtualFiles.size > 0) {
         sendEvent('text', { text: '\n\n**Quality check…**\n\n' })
 
         const filesSummary = [...virtualFiles.entries()]

@@ -7,6 +7,7 @@ import {
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { HomePage } from './apps/home-page'
 import { CreatePage } from './apps/create-page'
+import { EditPage } from './apps/edit-page'
 import { AppViewPage } from './apps/app-view'
 
 const rootRoute = createRootRoute({
@@ -36,10 +37,17 @@ const appViewRoute = createRoute({
   component: AppViewPage,
 })
 
+const editRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apps/$appId/edit',
+  component: EditPage,
+})
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   createRoute_,
   appViewRoute,
+  editRoute,
 ])
 
 export const router = createRouter({

@@ -2,7 +2,7 @@ const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${baseUrl}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { ...init?.headers },
     ...init,
   })
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`)
@@ -26,8 +26,12 @@ export type App = AppSummary & {
   cssCode: string | null
 }
 
+export type AppDetail = App & {
+  conversationHistory: unknown[]
+}
+
 export async function getApps(): Promise<AppSummary[]> {
-  const res = await apiFetch('/apps')
+  const res = await apiFetch('/apps',)
   return res.json()
 }
 
@@ -36,9 +40,15 @@ export async function getApp(appId: string): Promise<App> {
   return res.json()
 }
 
+export async function getAppForEdit(appId: string): Promise<AppDetail> {
+  const res = await apiFetch(`/apps/${appId}/edit`)
+  return res.json()
+}
+
 export async function createApp(name: string): Promise<App> {
   const res = await apiFetch('/apps', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   })
   return res.json()
@@ -50,6 +60,7 @@ export async function patchApp(
 ): Promise<App> {
   const res = await apiFetch(`/apps/${appId}`, {
     method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   })
   return res.json()
@@ -70,6 +81,7 @@ export function buildApp(appId: string, userMessage: string): Promise<Response> 
 export async function answerAppQuestion(questionId: string, answer: string): Promise<void> {
   await apiFetch('/apps/answer', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ questionId, answer }),
   })
 }
@@ -77,6 +89,7 @@ export async function answerAppQuestion(questionId: string, answer: string): Pro
 export async function generateText({ prompt, system, model }: { prompt: string; system?: string; model?: string }): Promise<string> {
   const res = await apiFetch('/ai/generate', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, system, model }),
   })
   if (!res.ok) throw new Error(`AI request failed: ${res.status}`)

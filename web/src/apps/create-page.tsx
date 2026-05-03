@@ -11,19 +11,37 @@ import { AppPreview } from './app-preview'
 import { getAppGlyph, getAppTint } from './data'
 import { SendHorizonal } from 'lucide-react'
 
-type ChatMessage =
+export type ChatMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; streaming: boolean }
   | { role: 'tool'; name: string }
   | { role: 'question'; questionId: string; question: string; answered: boolean }
 
 export function CreatePage() {
+  return <CreatePageInner />
+}
+
+type CreatePageInnerProps = {
+  initialWidgetId?: string
+  initialAppName?: string
+  initialMessages?: ChatMessage[]
+  initialCompiledCode?: string | null
+  initialCssCode?: string | null
+}
+
+export function CreatePageInner({
+  initialWidgetId,
+  initialAppName = 'Untitled app',
+  initialMessages = [],
+  initialCompiledCode = null,
+  initialCssCode = null,
+}: CreatePageInnerProps = {}) {
   const navigate = useNavigate()
-  const [widgetId, setWidgetId] = useState<string | null>(null)
-  const [appName, setAppName] = useState('Untitled app')
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [compiledCode, setCompiledCode] = useState<string | null>(null)
-  const [cssCode, setCssCode] = useState<string | null>(null)
+  const [widgetId, setWidgetId] = useState<string | null>(initialWidgetId ?? null)
+  const [appName, setAppName] = useState(initialAppName)
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+  const [compiledCode, setCompiledCode] = useState<string | null>(initialCompiledCode)
+  const [cssCode, setCssCode] = useState<string | null>(initialCssCode)
   const [isSending, setIsSending] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
