@@ -20,8 +20,15 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { generateText } from '@repo/data'
+import postcss from 'postcss'
+// @ts-expect-error — no type definitions for postcss-prefix-selector
+import prefixSelector from 'postcss-prefix-selector'
 
+const WIDGET_SCOPE = 'widget-root'
 
+function scopeCss(css: string): string {
+  return postcss([prefixSelector({ prefix: `.${WIDGET_SCOPE}` })]).process(css, { from: undefined }).css
+}
 
 // Modules the widget sandbox can import via require()
 const shadcnRegistry: Record<string, Record<string, unknown>> = {
@@ -68,13 +75,40 @@ export function AppPreview({
 
     const style = document.createElement('style')
     style.id = styleId
-    style.textContent = cssCode
+    style.textContent = scopeCss(cssCode)
+    style.dataset.widgetTransformed = 'true'
     document.head.appendChild(style)
 
     return () => {
       document.getElementById(styleId)?.remove()
     }
   }, [cssCode])
+
+  // Intercept any <style> tags the widget component injects into document.head and scope them
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (
+            node instanceof HTMLStyleElement &&
+            node.dataset.widgetTransformed !== 'true' &&
+            node.textContent
+          ) {
+            node.textContent = scopeCss(node.textContent)
+            node.dataset.widgetTransformed = 'true'
+            node.dataset.widgetInjected = 'true'
+          }
+        }
+      }
+    })
+
+    observer.observe(document.head, { childList: true })
+
+    return () => {
+      observer.disconnect()
+      document.querySelectorAll('[data-widget-injected]').forEach((el) => el.remove())
+    }
+  }, [])
 
   useEffect(() => {
     if (!compiledCode) {
@@ -126,5 +160,9 @@ export function AppPreview({
 
   if (!Component) return null
 
-  return <Component data={{}} />
+  return (
+    <div className={WIDGET_SCOPE}>
+      <Component data={{}} />
+    </div>
+  )
 }
