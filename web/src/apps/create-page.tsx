@@ -178,7 +178,8 @@ export function CreatePageInner({
 
   async function handleSave() {
     if (!widgetId || !compiledCode) return
-    await client.patchApp(widgetId, { name: appName, status: 'published' })
+    await client.patchApp(widgetId, { name: appName })
+    await client.installApp(widgetId)
     navigate({ to: '/' })
   }
 

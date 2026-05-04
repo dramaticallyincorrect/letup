@@ -6,7 +6,7 @@ import { join, posix } from 'node:path'
 import { and, desc, eq } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
-import { apps, appVersions } from '../db/schema'
+import { apps, appVersions, userAppInstalls } from '../db/schema'
 import { openDb, getDbPath, openDraftDb, getDraftDbPath } from '../db/appDb'
 import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
@@ -26,6 +26,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   getApp(fastify)
   getAppForEdit(fastify)
   patchApp(fastify)
+  installApp(fastify)
   deleteApp(fastify)
   buildApp(fastify)
   answerAppQuestion(fastify)
@@ -107,17 +108,16 @@ function getAppForEdit(fastify: Fastify) {
 function patchApp(fastify: Fastify) {
   fastify.patch<{
     Params: { appId: string }
-    Body: { name?: string; description?: string; status?: 'draft' | 'published' }
+    Body: { name?: string; description?: string }
   }>('/apps/:appId', {
     schema: {
       tags: ['apps'],
-      summary: 'Update app name, description, or status',
+      summary: 'Update app name or description',
       body: {
         type: 'object',
         properties: {
           name: { type: 'string' },
           description: { type: 'string' },
-          status: { type: 'string', enum: ['draft', 'published'] },
         },
       },
     },
@@ -126,11 +126,46 @@ function patchApp(fastify: Fastify) {
     const patch = request.body
     const [updated] = await fastify.db
       .update(apps)
-      .set({ ...patch, updatedAt: new Date() })
+      .set({
+        ...(patch.name !== undefined && { name: patch.name }),
+        ...(patch.description !== undefined && { description: patch.description }),
+        updatedAt: new Date(),
+      })
       .where(eq(apps.id, appId))
       .returning()
     if (!updated) return reply.code(404).send({ error: 'app not found' })
     return reply.send(updated)
+  })
+}
+
+function installApp(fastify: Fastify) {
+  fastify.post<{ Params: { appId: string } }>('/apps/:appId/install', {
+    schema: { tags: ['apps'], summary: 'Install latest app version and publish it' },
+  }, async (request, reply) => {
+    const { appId } = request.params
+    const userId = getCurrentUserId()
+
+    const [latestVersion] = await fastify.db
+      .select({ id: appVersions.id })
+      .from(appVersions)
+      .innerJoin(apps, eq(appVersions.appId, apps.id))
+      .where(and(eq(appVersions.appId, appId), eq(appVersions.versionNumber, apps.latestVersionNumber)))
+      .limit(1)
+
+    if (!latestVersion) return reply.code(404).send({ error: 'No built version found — build the app first' })
+
+    await fastify.db
+      .insert(userAppInstalls)
+      .values({ userId, versionId: latestVersion.id })
+      .onConflictDoNothing()
+
+    const [updated] = await fastify.db
+      .update(apps)
+      .set({ status: 'published', updatedAt: new Date() })
+      .where(eq(apps.id, appId))
+      .returning()
+
+    return reply.code(201).send(updated)
   })
 }
 

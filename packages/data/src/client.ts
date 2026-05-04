@@ -83,9 +83,14 @@ export async function createApp(name: string): Promise<App> {
   return res.json()
 }
 
+export async function installApp(appId: string): Promise<AppSummary> {
+  const res = await apiFetch(`/apps/${appId}/install`, { method: 'POST' })
+  return res.json()
+}
+
 export async function patchApp(
   appId: string,
-  patch: Partial<Pick<App, 'name' | 'description' | 'status'>>
+  patch: Partial<Pick<App, 'name' | 'description'>>
 ): Promise<App> {
   const res = await apiFetch(`/apps/${appId}`, {
     method: 'PATCH',
