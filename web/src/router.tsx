@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { HomePage } from './apps/home-page'
+import { MarketplacePage } from './apps/marketplace-page'
 import { CreatePage } from './apps/create-page'
 import { EditPage } from './apps/edit-page'
 import { AppViewPage } from './apps/app-view'
@@ -23,6 +24,12 @@ const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: HomePage,
+})
+
+const marketplaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/marketplace',
+  component: MarketplacePage,
 })
 
 const createRoute_ = createRoute({
@@ -45,6 +52,7 @@ const editRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
+  marketplaceRoute,
   createRoute_,
   appViewRoute,
   editRoute,

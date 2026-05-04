@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { TINT_STYLES } from './app-icon'
 
 type Props = {
-  active: 'library' | 'create'
+  active: 'library' | 'marketplace' | 'create'
   search?: string
   onSearch?: (v: string) => void
 }
@@ -32,6 +32,15 @@ export function Chrome({ active, search = '', onSearch }: Props) {
             )}
           >
             My apps
+          </Link>
+          <Link
+            to="/marketplace"
+            className={cn(
+              'px-3.5 py-[7px] rounded-full text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors no-underline',
+              active === 'marketplace' && 'text-foreground bg-secondary',
+            )}
+          >
+            Marketplace
           </Link>
           <Link
             to="/create"

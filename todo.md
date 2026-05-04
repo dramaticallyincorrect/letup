@@ -12,15 +12,15 @@ a marketplace for user created app
       1. ~~create apps usage~~
       2. ~~apps with ai usage~~
 
-## market place
-
-1. submit to review
-2. approve and publish
-
 ## Home Page
 1. list apps
 2. list market place
 3. install from market place
+
+## market place
+
+1. submit to review
+2. approve and publish
 
 ## infra
 
