@@ -52,6 +52,43 @@ export default function MyWidget({ data }: { data: Record<string, unknown> }) {
 }
 ```
 
+## Persistent database — store and query user data
+
+Each app has its own SQLite database. Use it when the app needs to persist data between sessions (todos, notes, records, scores, etc.).
+
+**Step 0** — call `setup_database` tool with your schema SQL:
+
+```sql
+CREATE TABLE IF NOT EXISTS items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  text TEXT NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+**At runtime** — import from the `db` module:
+
+```tsx
+import { query } from 'db'
+
+// SELECT — returns { rows: T[] }
+const { rows } = await query<{ id: number; text: string; done: number }>(
+  'SELECT * FROM items ORDER BY created_at DESC'
+)
+
+// INSERT
+await query('INSERT INTO items (text) VALUES (?)', ['Buy milk'])
+
+// UPDATE
+await query('UPDATE items SET done = 1 WHERE id = ?', [id])
+
+// DELETE
+await query('DELETE FROM items WHERE id = ?', [id])
+```
+
+Always show a loading state while queries are in flight. Handle errors with try/catch and show a friendly error message.
+
 ## AI capabilities — call Claude from within the app
 
 If the app needs to generate text, answer questions, write content, or produce any AI-driven output, import from the `ai` module:

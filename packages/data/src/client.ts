@@ -9,13 +9,17 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return res
 }
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+
 export type AppStatus = 'draft' | 'published'
 
 export type AppSummary = {
   id: string
+  creatorId: string | null
   name: string
   description: string
   status: AppStatus
+  latestVersionNumber: number
   createdAt: string
   updatedAt: string
 }
@@ -30,8 +34,33 @@ export type AppDetail = App & {
   conversationHistory: unknown[]
 }
 
+
+export type User = {
+  id: string
+  handle: string
+  displayName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type UserAppInstall = {
+  userId: string
+  versionId: string
+  installedAt: string
+  versionNumber: number
+  appId: string
+  appName: string
+  appDescription: string
+  appStatus: AppStatus
+  latestVersionNumber: number
+  appCreatedAt: string
+  appUpdatedAt: string
+}
+
+// ── Apps ──────────────────────────────────────────────────────────────────────
+
 export async function getApps(): Promise<AppSummary[]> {
-  const res = await apiFetch('/apps',)
+  const res = await apiFetch('/apps')
   return res.json()
 }
 
@@ -86,6 +115,35 @@ export async function answerAppQuestion(questionId: string, answer: string): Pro
   })
 }
 
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+export async function getUser(userId: string): Promise<User> {
+  const res = await apiFetch(`/users/${userId}`)
+  return res.json()
+}
+
+export async function getUserInstalls(userId: string): Promise<UserAppInstall[]> {
+  const res = await apiFetch(`/users/${userId}/installs`)
+  return res.json()
+}
+
+// ── Database ──────────────────────────────────────────────────────────────────
+
+export async function queryAppDb(
+  appId: string,
+  sql: string,
+  params?: unknown[]
+): Promise<{ rows: unknown[] }> {
+  const res = await apiFetch(`/apps/${appId}/db/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql, params }),
+  })
+  return res.json()
+}
+
+// ── AI ────────────────────────────────────────────────────────────────────────
+
 export async function generateText({ prompt, system, model }: { prompt: string; system?: string; model?: string }): Promise<string> {
   const res = await apiFetch('/ai/generate', {
     method: 'POST',
@@ -96,6 +154,8 @@ export async function generateText({ prompt, system, model }: { prompt: string; 
   const data = await res.json() as { text: string }
   return data.text
 }
+
+// ── SSE ───────────────────────────────────────────────────────────────────────
 
 export async function* parseSSE(reader: ReadableStreamDefaultReader<Uint8Array>) {
   const decoder = new TextDecoder()

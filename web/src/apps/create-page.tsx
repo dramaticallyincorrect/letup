@@ -403,7 +403,7 @@ export function CreatePageInner({
           ) : (
             <div className="flex-1 overflow-auto">
               <div className="w-full">
-                <AppPreview compiledCode={compiledCode} cssCode={cssCode} />
+                <AppPreview compiledCode={compiledCode} cssCode={cssCode} appId={widgetId ?? undefined} />
               </div>
             </div>
           )}

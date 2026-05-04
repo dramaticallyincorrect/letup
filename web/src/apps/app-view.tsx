@@ -29,5 +29,5 @@ export function AppViewPage() {
     )
   }
 
-  return <AppPreview compiledCode={app.compiledCode} cssCode={app.cssCode} />
+  return <AppPreview compiledCode={app.compiledCode} cssCode={app.cssCode} appId={appId} />
 }

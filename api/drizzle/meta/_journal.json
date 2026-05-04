@@ -22,6 +22,27 @@
       "when": 1777625663788,
       "tag": "0002_productive_human_robot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1746396000000,
+      "tag": "0003_users_versions_installs",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1746396060000,
+      "tag": "0004_seed_system_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1746396120000,
+      "tag": "0005_migrate_code_to_versions",
+      "breakpoints": true
     }
   ]
 }

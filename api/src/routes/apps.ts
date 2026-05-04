@@ -1,19 +1,20 @@
 import {
   type FastifyPluginAsync,
 } from 'fastify'
-import { readFileSync } from 'node:fs'
+import { readFileSync, unlinkSync, rmSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
-import { apps } from '../db/schema'
+import { apps, appVersions } from '../db/schema'
+import { openDb, getDbPath, openDraftDb, getDraftDbPath } from '../db/appDb'
+import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
 import { createShadcnMcpTools } from '../shadcnMcp'
 import { Fastify } from '../fastify_type'
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
 const PLAN_SYSTEM          = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
-const DESIGN_SYSTEM_PROMPT = cached(readFileSync(join(__dirname, '../prompts/app-design-system.md'), 'utf8'))
 const BUILD_SYSTEM         = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
 
 // Deferred promises waiting for user answers, keyed by question ID
@@ -28,6 +29,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   deleteApp(fastify)
   buildApp(fastify)
   answerAppQuestion(fastify)
+  queryAppDb(fastify)
 }
 
 function sseHeaders(origin?: string) {
@@ -41,18 +43,21 @@ function sseHeaders(origin?: string) {
 
 function listApps(fastify: Fastify) {
   fastify.get('/apps', {
-    schema: { tags: ['apps'], summary: 'List all apps' },
+    schema: { tags: ['apps'], summary: 'List apps for the current user' },
   }, async (_request, reply) => {
     const result = await fastify.db
       .select({
         id: apps.id,
+        creatorId: apps.creatorId,
         name: apps.name,
         description: apps.description,
         status: apps.status,
+        latestVersionNumber: apps.latestVersionNumber,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,
       })
       .from(apps)
+      .where(eq(apps.creatorId, getCurrentUserId()))
       .orderBy(desc(apps.createdAt))
     return reply.send(result)
   })
@@ -62,7 +67,7 @@ function createApp(fastify: Fastify) {
   fastify.post<{ Body: { name: string } }>('/apps', {
     schema: {
       tags: ['apps'],
-      summary: 'Create a draft app',
+      summary: 'Create a draft app for the current user',
       body: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -72,8 +77,9 @@ function createApp(fastify: Fastify) {
   }, async (request, reply) => {
     const [app] = await fastify.db
       .insert(apps)
-      .values({ name: request.body.name })
+      .values({ name: request.body.name, creatorId: getCurrentUserId() })
       .returning()
+    openDb(app.id).close()
     return reply.code(201).send(app)
   })
 }
@@ -82,22 +88,9 @@ function getApp(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId', {
     schema: { tags: ['apps'], summary: 'Get an app by ID' },
   }, async (request, reply) => {
-    const [app] = await fastify.db
-      .select({
-        id: apps.id,
-        name: apps.name,
-        description: apps.description,
-        status: apps.status,
-        sourceCode: apps.sourceCode,
-        compiledCode: apps.compiledCode,
-        cssCode: apps.cssCode,
-        createdAt: apps.createdAt,
-        updatedAt: apps.updatedAt,
-      })
-      .from(apps)
-      .where(eq(apps.id, request.params.appId))
-    if (!app) return reply.code(404).send({ error: 'app not found' })
-    return reply.send(app)
+    const row = await loadAppWithVersion(fastify.db, request.params.appId)
+    if (!row) return reply.code(404).send({ error: 'app not found' })
+    return reply.send(row)
   })
 }
 
@@ -105,12 +98,9 @@ function getAppForEdit(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId/edit', {
     schema: { tags: ['apps'], summary: 'Get an app by ID including conversation history' },
   }, async (request, reply) => {
-    const [app] = await fastify.db
-      .select()
-      .from(apps)
-      .where(eq(apps.id, request.params.appId))
-    if (!app) return reply.code(404).send({ error: 'app not found' })
-    return reply.send(app)
+    const row = await loadAppWithVersion(fastify.db, request.params.appId)
+    if (!row) return reply.code(404).send({ error: 'app not found' })
+    return reply.send(row)
   })
 }
 
@@ -144,11 +134,15 @@ function patchApp(fastify: Fastify) {
   })
 }
 
+
 function deleteApp(fastify: Fastify) {
   fastify.delete<{ Params: { appId: string } }>('/apps/:appId', {
     schema: { tags: ['apps'], summary: 'Delete an app' },
   }, async (request, reply) => {
-    await fastify.db.delete(apps).where(eq(apps.id, request.params.appId))
+    const { appId } = request.params
+    await fastify.db.delete(apps).where(eq(apps.id, appId))
+    try { unlinkSync(getDbPath(appId)) } catch { /* file may not exist */ }
+    try { rmSync(getDraftDbPath(appId)) } catch { /* file may not exist */ }
     return reply.code(204).send()
   })
 }
@@ -192,7 +186,7 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
       '@/components/ui/*', '@/lib/utils',
       'radix-ui', 'lucide-react',
       'class-variance-authority', 'tailwind-merge',
-      'ai',
+      'ai', 'db',
     ],
     plugins: [
       {
@@ -250,6 +244,39 @@ function extractText(messages: Anthropic.MessageParam[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Shared helper — load app joined with its latest version
+// ---------------------------------------------------------------------------
+
+async function loadAppWithVersion(db: import('../db').DB, appId: string) {
+  const [row] = await db
+    .select({
+      id: apps.id,
+      creatorId: apps.creatorId,
+      name: apps.name,
+      description: apps.description,
+      status: apps.status,
+      latestVersionNumber: apps.latestVersionNumber,
+      conversationHistory: apps.conversationHistory,
+      createdAt: apps.createdAt,
+      updatedAt: apps.updatedAt,
+      compiledCode: appVersions.compiledCode,
+      cssCode: appVersions.cssCode,
+      sourceFiles: appVersions.sourceFiles,
+      dbSchema: appVersions.dbSchema,
+    })
+    .from(apps)
+    .leftJoin(
+      appVersions,
+      and(
+        eq(appVersions.appId, apps.id),
+        eq(appVersions.versionNumber, apps.latestVersionNumber),
+      ),
+    )
+    .where(eq(apps.id, appId))
+  return row ?? null
+}
+
+// ---------------------------------------------------------------------------
 // Build app route
 // ---------------------------------------------------------------------------
 
@@ -271,8 +298,11 @@ function buildApp(fastify: Fastify) {
   }, async (request, reply) => {
     const { appId, userMessage, model: modelOverride } = request.body
 
-    const [app] = await fastify.db.select().from(apps).where(eq(apps.id, appId))
+    const app = await loadAppWithVersion(fastify.db, appId)
     if (!app) return reply.code(404).send({ error: 'app not found' })
+
+    // Version to write to: keep current version if one exists, otherwise start at 1
+    const targetVersionNumber = Math.max(app.latestVersionNumber, 1)
 
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
@@ -284,7 +314,7 @@ function buildApp(fastify: Fastify) {
     const agentState = {
       name: app.name,
       description: app.description,
-      compiledCode: app.compiledCode,
+      compiledCode: app.compiledCode as string | null,
     }
 
     const virtualFiles = new Map<string, string>()
@@ -309,8 +339,15 @@ function buildApp(fastify: Fastify) {
         const cssCode = virtualFiles.get('styles.css') ?? null
         const sourceFilesArray = [...virtualFiles.entries()].map(([path, content]) => ({ path, content }))
         await fastify.db
+          .insert(appVersions)
+          .values({ appId, versionNumber: targetVersionNumber, compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray })
+          .onConflictDoUpdate({
+            target: [appVersions.appId, appVersions.versionNumber],
+            set: { compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray },
+          })
+        await fastify.db
           .update(apps)
-          .set({ compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, updatedAt: new Date() })
+          .set({ latestVersionNumber: targetVersionNumber, updatedAt: new Date() })
           .where(eq(apps.id, appId))
         return { success: true }
       } catch (err) {
@@ -438,6 +475,39 @@ function buildApp(fastify: Fastify) {
           messages: [...messages.slice(0, -1), { role: 'user', content: buildUserMessage }],
           tools: [
             ...shadcnPass2.tools,
+            {
+              name: 'setup_database',
+              description: 'Initialize the app database schema. Run CREATE TABLE IF NOT EXISTS statements and optional seed data. Call this once before writing any code that uses the db module.',
+              input_schema: {
+                type: 'object' as const,
+                properties: {
+                  sql: { type: 'string', description: 'One or more SQL statements (CREATE TABLE, INSERT seed data, etc.)' },
+                },
+                required: ['sql'],
+              },
+              handler: async (input: Record<string, unknown>) => {
+                const schemaSQL = input.sql as string
+                // Persist schema in app_versions
+                await fastify.db
+                  .insert(appVersions)
+                  .values({ appId, versionNumber: targetVersionNumber, dbSchema: schemaSQL })
+                  .onConflictDoUpdate({
+                    target: [appVersions.appId, appVersions.versionNumber],
+                    set: { dbSchema: schemaSQL },
+                  })
+                await fastify.db
+                  .update(apps)
+                  .set({ latestVersionNumber: targetVersionNumber, updatedAt: new Date() })
+                  .where(eq(apps.id, appId))
+                // Apply to draft DB (isolated build scratch)
+                const draft = openDraftDb(appId)
+                try { draft.exec(schemaSQL) } finally { draft.close() }
+                // Apply to real DB so the builder's preview queries work
+                const real = openDb(appId)
+                try { real.exec(schemaSQL) } finally { real.close() }
+                return { success: true }
+              },
+            },
             {
               name: 'set_app_metadata',
               description: 'Set the display name and one-sentence description for the app.',
@@ -589,7 +659,7 @@ function buildApp(fastify: Fastify) {
       //   }
       // }
 
-      const [updated] = await fastify.db.select().from(apps).where(eq(apps.id, appId))
+      const updated = await loadAppWithVersion(fastify.db, appId)
       sendEvent('widget', updated)
     } catch (err) {
       fastify.log.error(err, 'app build error')
@@ -598,6 +668,37 @@ function buildApp(fastify: Fastify) {
 
     sendEvent('done', {})
     reply.raw.end()
+  })
+}
+
+function queryAppDb(fastify: Fastify) {
+  fastify.post<{
+    Params: { appId: string }
+    Body: { sql: string; params?: unknown[] }
+  }>('/apps/:appId/db/query', {
+    schema: {
+      tags: ['apps'],
+      summary: 'Run a SQL query against the app\'s SQLite database',
+      body: {
+        type: 'object',
+        properties: {
+          sql: { type: 'string' },
+          params: { type: 'array' },
+        },
+        required: ['sql'],
+      },
+    },
+  }, async (request, reply) => {
+    const { appId } = request.params
+    const { sql, params = [] } = request.body
+    const db = openDb(appId)
+    try {
+      const stmt = db.prepare(sql)
+      const rows = stmt.reader ? stmt.all(...params) : (() => { stmt.run(...params); return [] })()
+      return reply.send({ rows })
+    } finally {
+      db.close()
+    }
   })
 }
 

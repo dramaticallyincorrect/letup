@@ -209,10 +209,10 @@ function LibraryView({
 
   return (
     <>
-      <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))] max-[900px]:[grid-template-columns:repeat(2,1fr)] max-[600px]:grid-cols-1">
+      <div className="grid gap-4.5 grid-cols-[repeat(auto-fill,minmax(280px,1fr))] max-[900px]:grid-cols-[repeat(2,1fr)] max-[600px]:grid-cols-1">
         <Link
           to="/create"
-          className="p-[22px] flex flex-col gap-4 border-[1.5px] border-dashed border-input rounded-[var(--radius-lg)] min-h-[178px] hover:border-accent hover:bg-accent/10 transition-colors no-underline text-foreground"
+          className="p-5.5 flex flex-col gap-4 border-[1.5px] border-dashed border-input rounded-(--radius-lg) min-h-44.5 hover:border-accent hover:bg-accent/10 transition-colors no-underline text-foreground"
         >
           <div className="size-12 rounded-xl bg-foreground grid place-items-center text-[22px] text-background">
             +
@@ -226,7 +226,7 @@ function LibraryView({
         ))}
 
         {apps.length === 0 && (
-          <div className="col-span-full text-center py-[60px] px-5 text-muted-foreground">
+          <div className="col-span-full text-center py-15 px-5 text-muted-foreground">
             No apps yet — create your first one!
           </div>
         )}
