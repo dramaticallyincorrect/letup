@@ -7,15 +7,15 @@ import { and, desc, eq } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls } from '../db/schema'
-import { openDb, getDbPath, openDraftDb, getDraftDbPath } from '../db/appDb'
+import { openDb, getDbPath, openDraftDb, getDraftDbPath, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
 import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
 import { createShadcnMcpTools } from '../shadcnMcp'
 import { Fastify } from '../fastify_type'
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
-const PLAN_SYSTEM          = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
-const BUILD_SYSTEM         = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
+const PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
+const BUILD_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
 
 // Deferred promises waiting for user answers, keyed by question ID
 const pendingQuestions = new Map<string, (answer: string) => void>()
@@ -23,6 +23,7 @@ const pendingQuestions = new Map<string, (answer: string) => void>()
 const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   listApps(fastify)
   createApp(fastify)
+  createDraft(fastify)
   getApp(fastify)
   getAppForEdit(fastify)
   patchApp(fastify)
@@ -80,8 +81,46 @@ function createApp(fastify: Fastify) {
       .insert(apps)
       .values({ name: request.body.name, creatorId: getCurrentUserId() })
       .returning()
+    await fastify.db
+      .insert(appVersions)
+      .values({ appId: app.id, versionNumber: 1, isDraft: true })
     openDb(app.id).close()
     return reply.code(201).send(app)
+  })
+}
+
+function createDraft(fastify: Fastify) {
+  fastify.post<{ Params: { appId: string } }>('/apps/:appId/draft', {
+    schema: { tags: ['apps'], summary: 'Create a new draft version from the current published version' },
+  }, async (request, reply) => {
+    const { appId } = request.params
+
+    // Idempotent: return existing draft if one already exists
+    const [latestVersion] = await fastify.db
+      .select()
+      .from(appVersions)
+      .where(eq(appVersions.appId, appId))
+      .orderBy(desc(appVersions.versionNumber))
+      .limit(1)
+
+    if (latestVersion.isDraft) return reply.send(latestVersion)
+
+    const [draftVersion] = await fastify.db
+      .insert(appVersions)
+      .values({
+        appId,
+        versionNumber: latestVersion.versionNumber + 1,
+        isDraft: true,
+        sourceFiles: latestVersion.sourceFiles ?? [],
+        compiledCode: latestVersion.compiledCode ?? null,
+        cssCode: latestVersion.cssCode ?? null,
+        dbSchema: latestVersion.dbSchema ?? null,
+      })
+      .returning()
+
+    copyPublishedToDraft(appId)
+
+    return reply.code(201).send(draftVersion)
   })
 }
 
@@ -97,9 +136,25 @@ function getApp(fastify: Fastify) {
 
 function getAppForEdit(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId/edit', {
-    schema: { tags: ['apps'], summary: 'Get an app by ID including conversation history' },
+    schema: { tags: ['apps'], summary: 'Get an app by ID including conversation history (prefers draft version)' },
   }, async (request, reply) => {
-    const row = await loadAppWithVersion(fastify.db, request.params.appId)
+    const { appId } = request.params
+    const appRow = await fastify.db
+      .select({ latestVersionNumber: apps.latestVersionNumber })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1)
+      .then(rows => rows[0] ?? null)
+    if (!appRow) return reply.code(404).send({ error: 'app not found' })
+
+    const [draftVersion] = await fastify.db
+      .select({ versionNumber: appVersions.versionNumber })
+      .from(appVersions)
+      .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
+      .limit(1)
+
+    const versionNumber = draftVersion?.versionNumber ?? appRow.latestVersionNumber
+    const row = await loadAppWithVersionNumber(fastify.db, appId, versionNumber)
     if (!row) return reply.code(404).send({ error: 'app not found' })
     return reply.send(row)
   })
@@ -145,23 +200,29 @@ function installApp(fastify: Fastify) {
     const { appId } = request.params
     const userId = getCurrentUserId()
 
-    const [latestVersion] = await fastify.db
-      .select({ id: appVersions.id })
+    const [draftVersion] = await fastify.db
+      .select({ id: appVersions.id, versionNumber: appVersions.versionNumber })
       .from(appVersions)
-      .innerJoin(apps, eq(appVersions.appId, apps.id))
-      .where(and(eq(appVersions.appId, appId), eq(appVersions.versionNumber, apps.latestVersionNumber)))
+      .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
       .limit(1)
 
-    if (!latestVersion) return reply.code(404).send({ error: 'No built version found — build the app first' })
+    if (!draftVersion) return reply.code(400).send({ error: 'No draft version to install — build the app first' })
+
+    copyDraftToPublished(appId)
+
+    await fastify.db
+      .update(appVersions)
+      .set({ isDraft: false })
+      .where(eq(appVersions.id, draftVersion.id))
 
     await fastify.db
       .insert(userAppInstalls)
-      .values({ userId, versionId: latestVersion.id })
+      .values({ userId, versionId: draftVersion.id })
       .onConflictDoNothing()
 
     const [updated] = await fastify.db
       .update(apps)
-      .set({ status: 'published', updatedAt: new Date() })
+      .set({ status: 'published', latestVersionNumber: draftVersion.versionNumber, updatedAt: new Date() })
       .where(eq(apps.id, appId))
       .returning()
 
@@ -282,29 +343,48 @@ function extractText(messages: Anthropic.MessageParam[]): string {
 // Shared helper — load app joined with its latest version
 // ---------------------------------------------------------------------------
 
+const APP_VERSION_COLUMNS = {
+  id: apps.id,
+  creatorId: apps.creatorId,
+  name: apps.name,
+  description: apps.description,
+  status: apps.status,
+  latestVersionNumber: apps.latestVersionNumber,
+  conversationHistory: apps.conversationHistory,
+  createdAt: apps.createdAt,
+  updatedAt: apps.updatedAt,
+  versionNumber: appVersions.versionNumber,
+  isDraft: appVersions.isDraft,
+  compiledCode: appVersions.compiledCode,
+  cssCode: appVersions.cssCode,
+  sourceFiles: appVersions.sourceFiles,
+  dbSchema: appVersions.dbSchema,
+}
+
 async function loadAppWithVersion(db: import('../db').DB, appId: string) {
   const [row] = await db
-    .select({
-      id: apps.id,
-      creatorId: apps.creatorId,
-      name: apps.name,
-      description: apps.description,
-      status: apps.status,
-      latestVersionNumber: apps.latestVersionNumber,
-      conversationHistory: apps.conversationHistory,
-      createdAt: apps.createdAt,
-      updatedAt: apps.updatedAt,
-      compiledCode: appVersions.compiledCode,
-      cssCode: appVersions.cssCode,
-      sourceFiles: appVersions.sourceFiles,
-      dbSchema: appVersions.dbSchema,
-    })
+    .select(APP_VERSION_COLUMNS)
     .from(apps)
     .leftJoin(
       appVersions,
       and(
         eq(appVersions.appId, apps.id),
         eq(appVersions.versionNumber, apps.latestVersionNumber),
+      ),
+    )
+    .where(eq(apps.id, appId))
+  return row ?? null
+}
+
+async function loadAppWithVersionNumber(db: import('../db').DB, appId: string, versionNumber: number) {
+  const [row] = await db
+    .select(APP_VERSION_COLUMNS)
+    .from(apps)
+    .leftJoin(
+      appVersions,
+      and(
+        eq(appVersions.appId, apps.id),
+        eq(appVersions.versionNumber, versionNumber),
       ),
     )
     .where(eq(apps.id, appId))
@@ -336,8 +416,15 @@ function buildApp(fastify: Fastify) {
     const app = await loadAppWithVersion(fastify.db, appId)
     if (!app) return reply.code(404).send({ error: 'app not found' })
 
-    // Version to write to: keep current version if one exists, otherwise start at 1
-    const targetVersionNumber = Math.max(app.latestVersionNumber, 1)
+    // Draft must already exist (created via POST /apps or POST /apps/:appId/draft)
+    const [draftRow] = await fastify.db
+      .select({ versionNumber: appVersions.versionNumber })
+      .from(appVersions)
+      .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
+      .limit(1)
+    if (!draftRow) return reply.code(400).send({ error: 'No draft version found — call POST /apps/:appId/draft first' })
+
+    const targetVersionNumber = draftRow.versionNumber
 
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
@@ -375,14 +462,14 @@ function buildApp(fastify: Fastify) {
         const sourceFilesArray = [...virtualFiles.entries()].map(([path, content]) => ({ path, content }))
         await fastify.db
           .insert(appVersions)
-          .values({ appId, versionNumber: targetVersionNumber, compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray })
+          .values({ appId, versionNumber: targetVersionNumber, compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, isDraft: true })
           .onConflictDoUpdate({
             target: [appVersions.appId, appVersions.versionNumber],
-            set: { compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray },
+            set: { compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, isDraft: true },
           })
         await fastify.db
           .update(apps)
-          .set({ latestVersionNumber: targetVersionNumber, updatedAt: new Date() })
+          .set({ updatedAt: new Date() })
           .where(eq(apps.id, appId))
         return { success: true }
       } catch (err) {
@@ -500,8 +587,8 @@ function buildApp(fastify: Fastify) {
       const buildUserMessage = isRefinement
         ? userMessage
         : (designPlan
-            ? `Execute this plan and build the website:${designPlan}\n\n`
-            : userMessage)
+          ? `Execute this plan and build the website:${designPlan}\n\n`
+          : userMessage)
 
       let finalMessages: Anthropic.MessageParam[] = []
       const shadcnPass2 = await createShadcnMcpTools()
@@ -522,24 +609,21 @@ function buildApp(fastify: Fastify) {
               },
               handler: async (input: Record<string, unknown>) => {
                 const schemaSQL = input.sql as string
-                // Persist schema in app_versions
+                // Persist schema in the draft version row
                 await fastify.db
                   .insert(appVersions)
-                  .values({ appId, versionNumber: targetVersionNumber, dbSchema: schemaSQL })
+                  .values({ appId, versionNumber: targetVersionNumber, dbSchema: schemaSQL, isDraft: true })
                   .onConflictDoUpdate({
                     target: [appVersions.appId, appVersions.versionNumber],
-                    set: { dbSchema: schemaSQL },
+                    set: { dbSchema: schemaSQL, isDraft: true },
                   })
                 await fastify.db
                   .update(apps)
-                  .set({ latestVersionNumber: targetVersionNumber, updatedAt: new Date() })
+                  .set({ updatedAt: new Date() })
                   .where(eq(apps.id, appId))
-                // Apply to draft DB (isolated build scratch)
+                // Apply only to draft DB — never touch the published DB during build
                 const draft = openDraftDb(appId)
                 try { draft.exec(schemaSQL) } finally { draft.close() }
-                // Apply to real DB so the builder's preview queries work
-                const real = openDb(appId)
-                try { real.exec(schemaSQL) } finally { real.close() }
                 return { success: true }
               },
             },
@@ -694,7 +778,7 @@ function buildApp(fastify: Fastify) {
       //   }
       // }
 
-      const updated = await loadAppWithVersion(fastify.db, appId)
+      const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
       sendEvent('widget', updated)
     } catch (err) {
       fastify.log.error(err, 'app build error')
@@ -709,11 +793,16 @@ function buildApp(fastify: Fastify) {
 function queryAppDb(fastify: Fastify) {
   fastify.post<{
     Params: { appId: string }
+    Querystring: { draft?: string }
     Body: { sql: string; params?: unknown[] }
   }>('/apps/:appId/db/query', {
     schema: {
       tags: ['apps'],
       summary: 'Run a SQL query against the app\'s SQLite database',
+      querystring: {
+        type: 'object',
+        properties: { draft: { type: 'string' } },
+      },
       body: {
         type: 'object',
         properties: {
@@ -726,7 +815,7 @@ function queryAppDb(fastify: Fastify) {
   }, async (request, reply) => {
     const { appId } = request.params
     const { sql, params = [] } = request.body
-    const db = openDb(appId)
+    const db = request.query.draft === 'true' ? openDraftDb(appId) : openDb(appId)
     try {
       const stmt = db.prepare(sql)
       const rows = stmt.reader ? stmt.all(...params) : (() => { stmt.run(...params); return [] })()

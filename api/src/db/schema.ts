@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, timestamp, uuid, jsonb, integer, unique, primaryKey } from 'drizzle-orm/pg-core'
+import { pgTable, pgEnum, text, timestamp, uuid, jsonb, integer, boolean, unique, primaryKey } from 'drizzle-orm/pg-core'
 
 export const appStatusEnum = pgEnum('app_status', ['draft', 'published'])
 
@@ -26,6 +26,7 @@ export const appVersions = pgTable('app_versions', {
   id: uuid('id').primaryKey().defaultRandom(),
   appId: uuid('app_id').notNull().references(() => apps.id, { onDelete: 'cascade' }),
   versionNumber: integer('version_number').notNull(),
+  isDraft: boolean('is_draft').notNull().default(false),
   compiledCode: text('compiled_code'),
   cssCode: text('css_code'),
   sourceFiles: jsonb('source_files').$type<Array<{ path: string; content: string }>>().default([]),

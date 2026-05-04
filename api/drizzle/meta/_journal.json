@@ -43,6 +43,20 @@
       "when": 1746396120000,
       "tag": "0005_migrate_code_to_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1746700000000,
+      "tag": "0006_draft_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777928454179,
+      "tag": "0007_cloudy_romulus",
+      "breakpoints": true
     }
   ]
 }

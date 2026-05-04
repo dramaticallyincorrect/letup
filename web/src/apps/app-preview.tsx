@@ -59,10 +59,12 @@ export function AppPreview({
   compiledCode,
   cssCode,
   appId,
+  draft = false,
 }: {
   compiledCode: string | null
   cssCode?: string | null
   appId?: string
+  draft?: boolean
 }) {
   const [Component, setComponent] = useState<React.ComponentType<{ data: Record<string, unknown> }> | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -124,7 +126,7 @@ export function AppPreview({
       const req = (name: string) => {
         if (name === 'react') return React
         if (name === 'db') return {
-          query: (sql: string, params?: unknown[]) => appId ? queryAppDb(appId, sql, params) : Promise.reject(new Error('No appId')),
+          query: (sql: string, params?: unknown[]) => appId ? queryAppDb(appId, sql, params, draft) : Promise.reject(new Error('No appId')),
         }
         if (name in shadcnRegistry) return shadcnRegistry[name]
         return {}
@@ -144,7 +146,7 @@ export function AppPreview({
       setError(err instanceof Error ? err.message : 'Failed to render widget')
       setComponent(null)
     }
-  }, [compiledCode, appId])
+  }, [compiledCode, appId, draft])
 
   if (!compiledCode) {
     return (

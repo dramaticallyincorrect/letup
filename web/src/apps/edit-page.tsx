@@ -45,7 +45,8 @@ export function EditPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    client.getAppForEdit(appId)
+    client.createDraft(appId)
+      .then(() => client.getAppForEdit(appId))
       .then(setApp)
       .catch(() => setError('Failed to load app. Please go back and try again.'))
   }, [appId])

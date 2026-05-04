@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, copyFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const DATA_DIR = join(__dirname, '../../data/apps')
@@ -22,6 +22,16 @@ export function getDraftDbPath(appId: string) {
 
 export function openDraftDb(appId: string) {
   return new Database(getDraftDbPath(appId))
+}
+
+export function copyPublishedToDraft(appId: string): void {
+  const src = getDbPath(appId)
+  if (existsSync(src)) copyFileSync(src, getDraftDbPath(appId))
+}
+
+export function copyDraftToPublished(appId: string): void {
+  const src = getDraftDbPath(appId)
+  if (existsSync(src)) copyFileSync(src, getDbPath(appId))
 }
 
 // Future: per-user production DB — for now unused but path helper ready

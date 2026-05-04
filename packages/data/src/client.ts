@@ -25,6 +25,8 @@ export type AppSummary = {
 }
 
 export type App = AppSummary & {
+  versionNumber: number | null
+  isDraft: boolean | null
   sourceCode: string | null
   compiledCode: string | null
   cssCode: string | null
@@ -88,6 +90,10 @@ export async function installApp(appId: string): Promise<AppSummary> {
   return res.json()
 }
 
+export async function createDraft(appId: string): Promise<void> {
+  await apiFetch(`/apps/${appId}/draft`, { method: 'POST' })
+}
+
 export async function patchApp(
   appId: string,
   patch: Partial<Pick<App, 'name' | 'description'>>
@@ -137,9 +143,11 @@ export async function getUserInstalls(userId: string): Promise<UserAppInstall[]>
 export async function queryAppDb(
   appId: string,
   sql: string,
-  params?: unknown[]
+  params?: unknown[],
+  draft?: boolean,
 ): Promise<{ rows: unknown[] }> {
-  const res = await apiFetch(`/apps/${appId}/db/query`, {
+  const url = draft ? `/apps/${appId}/db/query?draft=true` : `/apps/${appId}/db/query`
+  const res = await apiFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql, params }),
