@@ -6,11 +6,11 @@ a marketplace for user created app
 1. create app
    1. ~~polished ui~~
    2. ~~chat history~~
-   3. data access
+   3. ~~data access~~
    4. ~~agent access~~
-   5. usage
-      1. create apps usage
-      2. apps with ai usage
+   5. ~~usage~~
+      1. ~~create apps usage~~
+      2. ~~apps with ai usage~~
 
 ## market place
 

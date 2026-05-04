@@ -56,6 +56,7 @@ export async function runAgentLoop(params: {
   onText?: (delta: string) => void
   onThinking?: (delta: string) => void
   onToolCall?: (name: string, input: unknown, result: unknown) => void
+  onUsage?: (usage: Anthropic.Usage, model: string) => void | Promise<void>
 }): Promise<Anthropic.MessageParam[]> {
   const {
     messages,
@@ -67,6 +68,7 @@ export async function runAgentLoop(params: {
     onText,
     onThinking,
     onToolCall,
+    onUsage,
   } = params
 
   const sdkTools: Anthropic.Tool[] = tools.map(({ handler: _h, ...t }) => t)
@@ -127,6 +129,7 @@ export async function runAgentLoop(params: {
 
     const finalMessage = await stream.finalMessage()
     console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size} usage=${JSON.stringify(finalMessage.usage)}`)
+    await onUsage?.(finalMessage.usage, model)
 
     if (finalMessage.stop_reason === 'max_tokens') {
       throw new Error('Claude response exceeded max_tokens limit')

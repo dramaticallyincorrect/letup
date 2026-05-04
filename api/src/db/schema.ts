@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, timestamp, uuid, jsonb, integer, boolean, unique, primaryKey } from 'drizzle-orm/pg-core'
+import { pgTable, pgEnum, text, timestamp, uuid, jsonb, integer, boolean, unique, primaryKey, bigint } from 'drizzle-orm/pg-core'
 
 export const appStatusEnum = pgEnum('app_status', ['draft', 'published'])
 
@@ -39,3 +39,22 @@ export const userAppInstalls = pgTable('user_app_installs', {
   versionId: uuid('version_id').notNull().references(() => appVersions.id, { onDelete: 'cascade' }),
   installedAt: timestamp('installed_at').defaultNow().notNull(),
 }, (t) => [primaryKey({ columns: [t.userId, t.versionId] })])
+
+export const userCredits = pgTable('user_credits', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  balance: bigint('balance', { mode: 'bigint' }).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const aiUsageLogs = pgTable('ai_usage_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  source: text('source').notNull(),
+  model: text('model').notNull(),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  cacheCreationTokens: integer('cache_creation_tokens').notNull().default(0),
+  cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+  microUnitsUsed: bigint('micro_units_used', { mode: 'bigint' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})

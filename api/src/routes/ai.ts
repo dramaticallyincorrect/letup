@@ -1,9 +1,10 @@
 import { FastifyPluginAsync } from "fastify";
 import { Fastify } from "../fastify_type";
 import Anthropic from "@anthropic-ai/sdk";
+import { getCurrentUserId } from "../currentUser";
+import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from "../credits";
 
 const aiRoute: FastifyPluginAsync = async (fastify) => {
-
     generateAi(fastify)
 }
 
@@ -24,6 +25,12 @@ function generateAi(fastify: Fastify) {
         },
     }, async (request, reply) => {
         const { prompt, system, model = 'claude-haiku-4-5' } = request.body
+        const userId = getCurrentUserId()
+
+        if (!(await hasCredits(fastify.db, userId))) {
+            return reply.code(402).send({ error: 'Insufficient credits' })
+        }
+
         const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
         const message = await client.messages.create({
             model,
@@ -31,6 +38,18 @@ function generateAi(fastify: Fastify) {
             ...(system ? { system } : {}),
             messages: [{ role: 'user', content: prompt }],
         })
+
+        const mu = tokensToMicroUnits(message.usage, model)
+        try {
+            await checkAndDeductCredits(fastify.db, userId, mu)
+        } catch (err) {
+            if (err instanceof InsufficientCreditsError) {
+                return reply.code(402).send({ error: 'Insufficient credits' })
+            }
+            throw err
+        }
+        await logUsage(fastify.db, userId, 'ai-endpoint', model, message.usage, mu)
+
         const text = message.content
             .filter(b => b.type === 'text')
             .map(b => b.text)

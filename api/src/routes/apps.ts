@@ -10,6 +10,7 @@ import { apps, appVersions, userAppInstalls } from '../db/schema'
 import { openDb, getDbPath, openDraftDb, getDraftDbPath, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
 import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
+import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from '../credits'
 import { createShadcnMcpTools } from '../shadcnMcp'
 import { Fastify } from '../fastify_type'
 
@@ -412,6 +413,7 @@ function buildApp(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId, userMessage, model: modelOverride } = request.body
+    const userId = getCurrentUserId()
 
     const app = await loadAppWithVersion(fastify.db, appId)
     if (!app) return reply.code(404).send({ error: 'app not found' })
@@ -423,6 +425,10 @@ function buildApp(fastify: Fastify) {
       .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
       .limit(1)
     if (!draftRow) return reply.code(400).send({ error: 'No draft version found — call POST /apps/:appId/draft first' })
+
+    if (!(await hasCredits(fastify.db, userId))) {
+      return reply.code(402).send({ error: 'Insufficient credits' })
+    }
 
     const targetVersionNumber = draftRow.versionNumber
 
@@ -552,6 +558,11 @@ function buildApp(fastify: Fastify) {
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
           onThinking: (delta) => sendEvent('text', { text: delta }),
           onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+          onUsage: async (usage, model) => {
+            const mu = tokensToMicroUnits(usage, model)
+            await checkAndDeductCredits(fastify.db, userId, mu)
+            await logUsage(fastify.db, userId, 'build', model, usage, mu)
+          },
         })
         designPlan = extractText(planMessages)
 
@@ -658,6 +669,11 @@ function buildApp(fastify: Fastify) {
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
           onThinking: (delta) => sendEvent('text', { text: delta }),
           onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
+          onUsage: async (usage, model) => {
+            const mu = tokensToMicroUnits(usage, model)
+            await checkAndDeductCredits(fastify.db, userId, mu)
+            await logUsage(fastify.db, userId, 'build', model, usage, mu)
+          },
         })
       } finally {
         await shadcnPass2.close()
@@ -781,8 +797,12 @@ function buildApp(fastify: Fastify) {
       const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
       sendEvent('widget', updated)
     } catch (err) {
-      fastify.log.error(err, 'app build error')
-      sendEvent('error', { message: err instanceof Error ? err.message : 'Unknown error' })
+      if (err instanceof InsufficientCreditsError) {
+        sendEvent('error', { code: 'insufficient_credits', message: 'Insufficient credits' })
+      } else {
+        fastify.log.error(err, 'app build error')
+        sendEvent('error', { message: err instanceof Error ? err.message : 'Unknown error' })
+      }
     }
 
     sendEvent('done', {})
