@@ -3,6 +3,7 @@ import { useParams } from '@tanstack/react-router'
 import { Link } from '@tanstack/react-router'
 import * as client from '@repo/data'
 import { AppPreview } from './app-preview'
+import { useEffect } from 'react'
 
 export function AppViewPage() {
   const { appId } = useParams({ from: '/apps/$appId' })
@@ -10,6 +11,19 @@ export function AppViewPage() {
     queryKey: ['app', appId],
     queryFn: () => client.getApp(appId),
   })
+
+  useEffect(() => {
+    let link: HTMLLinkElement | null = document.querySelector('link[rel="manifest"]');
+
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'manifest';
+      document.head.appendChild(link);
+    }
+
+    // 4. Set the URI
+    link.href = `http://localhost:3000/apps/${appId}/manifest`;
+  }, [appId])
 
   if (isPending) {
     return (

@@ -33,6 +33,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   buildApp(fastify)
   answerAppQuestion(fastify)
   queryAppDb(fastify)
+  appManifest(fastify)
 }
 
 function sseHeaders(origin?: string) {
@@ -63,6 +64,59 @@ function listApps(fastify: Fastify) {
       .where(eq(apps.creatorId, getCurrentUserId()))
       .orderBy(desc(apps.createdAt))
     return reply.send(result)
+  })
+}
+
+function appManifest(fastify: Fastify) {
+  fastify.get<{ Params: { appId: string } }>('/apps/:appId/manifest', {
+    schema: { tags: ['apps'], summary: 'List apps for the current user' },
+  }, async (request, reply) => {
+    const { appId } = request.params
+
+
+    const result = await fastify.db
+      .select({
+        id: apps.id,
+        creatorId: apps.creatorId,
+        name: apps.name,
+        description: apps.description,
+        status: apps.status,
+        latestVersionNumber: apps.latestVersionNumber,
+        createdAt: apps.createdAt,
+        updatedAt: apps.updatedAt,
+      })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1)
+
+    const app = result[0]
+
+    return reply
+      .type('application/manifest+json')
+      .send(
+        {
+          "id": `http://localhost:5173/apps/${app.id}/`,
+          "name": app.name,
+          "short_name": `SubSite ${app.id}`,
+          "scope": `http://localhost:5173/apps/${appId}/`,
+          "start_url": `http://localhost:5173/apps/${app.id}/`,
+          "display": "standalone",
+          "background_color": "#ffffff",
+          "description": app.description,
+          "icons": [
+            {
+              "src": "https://picsum.photos/192",
+              "sizes": "192x192",
+              "type": "image/png"
+            },
+            {
+              "src": "https://picsum.photos/512",
+              "sizes": "512x512",
+              "type": "image/png"
+            }
+          ]
+        }
+      )
   })
 }
 
