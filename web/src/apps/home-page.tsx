@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal, PlusIcon } from 'lucide-react'
 import { Chrome } from './components/chrome'
 import { AppIcon } from './components/app-icon'
 import { Modal } from './components/modal'
@@ -58,11 +58,6 @@ export function HomePage() {
               {myApps.length} little tools, made by you for you
             </p>
           </div>
-          <Button asChild size="lg">
-            <Link to="/create">
-              <span className="text-base leading-none">+</span> Create new app
-            </Link>
-          </Button>
         </div>
 
         <div className="flex items-center gap-3.5 mb-6 flex-wrap">
@@ -135,7 +130,7 @@ function LibraryView({
           className="p-5.5 flex flex-col gap-4 border-[1.5px] border-dashed border-input rounded-(--radius-lg) min-h-44.5 hover:border-accent hover:bg-accent/10 transition-colors no-underline text-foreground"
         >
           <div className="size-12 rounded-xl bg-foreground grid place-items-center text-[22px] text-background">
-            +
+            <PlusIcon className='rounded-xl items-center bg-foreground text-background' />
           </div>
           <h3 className="font-bold text-base tracking-[-0.01em] m-0">Create new app</h3>
           <p className="text-[13.5px] text-muted-foreground m-0">Describe an idea. Claude builds the rest.</p>
