@@ -16,7 +16,7 @@ import remarkGfm from 'remark-gfm'
 export type ChatMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; thinking?: string; streaming: boolean }
-  | { role: 'question'; questionId: string; question: string; answered: boolean }
+  | { role: 'question'; questionId: string; question: string; suggestions: string[]; answered: boolean }
 
 function toolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
@@ -154,7 +154,7 @@ export function CreatePageInner({
             return next
           })
         } else if (event === 'user_question') {
-          const { questionId, question } = data as { questionId: string; question: string }
+          const { questionId, question, suggestions } = data as { questionId: string; question: string; suggestions?: string[] }
           setMessages(prev => {
             const next = [...prev]
             const last = next[next.length - 1]
@@ -163,7 +163,7 @@ export function CreatePageInner({
             }
             return [
               ...next,
-              { role: 'question', questionId, question, answered: false },
+              { role: 'question', questionId, question, suggestions: suggestions ?? [], answered: false },
             ]
           })
         } else if (event === 'error') {
@@ -200,8 +200,8 @@ export function CreatePageInner({
     setIsSending(false)
   }
 
-  async function handleAnswerQuestion(questionId: string) {
-    const answer = (questionAnswers[questionId] ?? '').trim()
+  async function handleAnswerQuestion(questionId: string, directAnswer?: string) {
+    const answer = (directAnswer ?? questionAnswers[questionId] ?? '').trim()
     if (!answer) return
     setQuestionAnswers(prev => {
       const next = { ...prev }
@@ -352,35 +352,55 @@ export function CreatePageInner({
                     </div>
                     <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1 w-full">
                       <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">Claude</div>
-                      <p className="m-0">{m.question}</p>
+                      <p className="m-0">
+                        <ReactMarkdown>
+                          {m.question}
+                        </ReactMarkdown>
+                      </p>
                       {!m.answered && (
-                        <div className="flex gap-2 mt-2">
-                          <Input
-                            type="text"
-                            value={questionAnswers[m.questionId] ?? ''}
-                            onChange={e =>
-                              setQuestionAnswers(prev => ({
-                                ...prev,
-                                [m.questionId]: e.target.value,
-                              }))
-                            }
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                handleAnswerQuestion(m.questionId)
+                        <div className="mt-2">
+                          {m.suggestions.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {m.suggestions.map((s, idx) => (
+                                <Button
+                                  size='xs'
+                                  variant='secondary'
+                                  key={idx}
+                                  onClick={() => handleAnswerQuestion(m.questionId, s)}
+                                >
+                                  {s}
+                                </Button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex gap-2 items-center mt-2 mr-24">
+                            <Input
+                              type="text"
+                              value={questionAnswers[m.questionId] ?? ''}
+                              onChange={e =>
+                                setQuestionAnswers(prev => ({
+                                  ...prev,
+                                  [m.questionId]: e.target.value,
+                                }))
                               }
-                            }}
-                            placeholder="Your answer…"
-                            className="flex-1"
-                            autoFocus
-                          />
-                          <Button
-                            size="sm"
-                            onClick={() => handleAnswerQuestion(m.questionId)}
-                            disabled={!(questionAnswers[m.questionId] ?? '').trim()}
-                          >
-                            Answer
-                          </Button>
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  handleAnswerQuestion(m.questionId)
+                                }
+                              }}
+                              placeholder="something else "
+                              className="flex-1"
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => handleAnswerQuestion(m.questionId)}
+                              disabled={!(questionAnswers[m.questionId] ?? '').trim()}
+                            >
+                              Answer
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>

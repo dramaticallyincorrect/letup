@@ -612,6 +612,11 @@ function buildApp(fastify: Fastify) {
         type: 'object' as const,
         properties: {
           question: { type: 'string', description: 'A specific, concise question for the user' },
+          suggestions: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional example answers to show the user as clickable suggestions',
+          },
         },
         required: ['question'],
       },
@@ -619,7 +624,11 @@ function buildApp(fastify: Fastify) {
         const questionId = crypto.randomUUID()
         const answer = await new Promise<string>(resolve => {
           pendingQuestions.set(questionId, resolve)
-          sendEvent('user_question', { questionId, question: input.question as string })
+          sendEvent('user_question', {
+            questionId,
+            question: input.question as string,
+            suggestions: (input.suggestions as string[] | undefined) ?? [],
+          })
         })
         return { answer }
       },
@@ -714,6 +723,7 @@ function buildApp(fastify: Fastify) {
           writeFileTool,
           readFileTool,
           listFilesTool,
+          askUserTool
         ]
 
         const buildLoopParams = {
