@@ -3,7 +3,7 @@ import {
 } from 'fastify'
 import { readFileSync, unlinkSync, rmSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls } from '../db/schema'
@@ -23,6 +23,7 @@ const pendingQuestions = new Map<string, (answer: string) => void>()
 
 const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   listApps(fastify)
+  listCreatedApps(fastify)
   createApp(fastify)
   createDraft(fastify)
   getApp(fastify)
@@ -47,7 +48,40 @@ function sseHeaders(origin?: string) {
 
 function listApps(fastify: Fastify) {
   fastify.get('/apps', {
-    schema: { tags: ['apps'], summary: 'List apps for the current user' },
+    schema: { tags: ['apps'], summary: 'List apps installed by the current user' },
+  }, async (_request, reply) => {
+    const userId = getCurrentUserId()
+
+    const installed = await fastify.db
+      .selectDistinct({ appId: appVersions.appId })
+      .from(userAppInstalls)
+      .innerJoin(appVersions, eq(userAppInstalls.versionId, appVersions.id))
+      .where(eq(userAppInstalls.userId, userId))
+
+    const appIds = installed.map(r => r.appId)
+    if (appIds.length === 0) return reply.send([])
+
+    const result = await fastify.db
+      .select({
+        id: apps.id,
+        creatorId: apps.creatorId,
+        name: apps.name,
+        description: apps.description,
+        status: apps.status,
+        latestVersionNumber: apps.latestVersionNumber,
+        createdAt: apps.createdAt,
+        updatedAt: apps.updatedAt,
+      })
+      .from(apps)
+      .where(inArray(apps.id, appIds))
+      .orderBy(desc(apps.updatedAt))
+    return reply.send(result)
+  })
+}
+
+function listCreatedApps(fastify: Fastify) {
+  fastify.get('/apps/created', {
+    schema: { tags: ['apps'], summary: 'List apps created by the current user' },
   }, async (_request, reply) => {
     const result = await fastify.db
       .select({

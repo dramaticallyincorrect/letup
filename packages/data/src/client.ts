@@ -66,6 +66,11 @@ export async function getApps(): Promise<AppSummary[]> {
   return res.json()
 }
 
+export async function getCreatedApps(): Promise<AppSummary[]> {
+  const res = await apiFetch('/apps/created')
+  return res.json()
+}
+
 export async function getApp(appId: string): Promise<App> {
   const res = await apiFetch(`/apps/${appId}`)
   return res.json()
@@ -166,6 +171,95 @@ export async function generateText({ prompt, system, model }: { prompt: string; 
   if (!res.ok) throw new Error(`AI request failed: ${res.status}`)
   const data = await res.json() as { text: string }
   return data.text
+}
+
+// ── Marketplace ───────────────────────────────────────────────────────────────
+
+export const MARKETPLACE_CATEGORIES = [
+  'Books',
+  'Business',
+  'Developer Tools',
+  'Education',
+  'Entertainment',
+  'Finance',
+  'Food & Drink',
+  'Graphics & Design',
+  'Health & Fitness',
+  'Lifestyle',
+  'Music',
+  'News',
+  'Photo & Video',
+  'Productivity',
+  'Reference',
+  'Shopping',
+  'Social Networking',
+  'Sports',
+  'Travel',
+  'Utilities',
+  'Weather',
+  'Writing',
+] as const
+
+export type MarketplaceCategory = (typeof MARKETPLACE_CATEGORIES)[number]
+
+export type SubmissionStatus = 'pending' | 'approved' | 'rejected'
+
+export type MarketplaceSubmission = {
+  id: string
+  appId: string
+  submittedBy: string
+  category: string
+  description: string
+  status: SubmissionStatus
+  approvedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type MarketplaceListing = {
+  id: string
+  appId: string
+  category: string
+  description: string
+  appName: string
+  appCreatorHandle: string
+  totalInstalls: number
+  avgRating: number | null
+}
+
+export async function submitApp(
+  appId: string,
+  body: { category: string; description: string },
+): Promise<MarketplaceSubmission> {
+  const res = await apiFetch(`/apps/${appId}/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
+export async function getAppSubmission(appId: string): Promise<MarketplaceSubmission | null> {
+  try {
+    const res = await apiFetch(`/apps/${appId}/submission`)
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
+export async function approveSubmission(submissionId: string): Promise<MarketplaceListing> {
+  const res = await apiFetch(`/marketplace/submissions/${submissionId}/approve`, { method: 'POST' })
+  return res.json()
+}
+
+export async function getMarketplaceListings(): Promise<MarketplaceListing[]> {
+  const res = await apiFetch('/marketplace/listings')
+  return res.json()
+}
+
+export async function installMarketplaceListing(appId: string): Promise<void> {
+  await apiFetch(`/marketplace/listings/${appId}/install`, { method: 'POST' })
 }
 
 // ── SSE ───────────────────────────────────────────────────────────────────────

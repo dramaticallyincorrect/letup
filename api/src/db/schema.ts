@@ -1,6 +1,7 @@
 import { pgTable, pgEnum, text, timestamp, uuid, jsonb, integer, boolean, unique, primaryKey, bigint } from 'drizzle-orm/pg-core'
 
 export const appStatusEnum = pgEnum('app_status', ['draft', 'published'])
+export const submissionStatusEnum = pgEnum('submission_status', ['pending', 'approved', 'rejected'])
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -45,6 +46,32 @@ export const userCredits = pgTable('user_credits', {
   balance: bigint('balance', { mode: 'bigint' }).notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
+
+export const marketplaceSubmissions = pgTable('marketplace_submissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  appId: uuid('app_id').notNull().unique().references(() => apps.id, { onDelete: 'cascade' }),
+  submittedBy: uuid('submitted_by').notNull().references(() => users.id),
+  category: text('category').notNull(),
+  description: text('description').notNull(),
+  status: submissionStatusEnum('status').notNull().default('pending'),
+  approvedAt: timestamp('approved_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const marketplaceListings = pgTable('marketplace_listings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  appId: uuid('app_id').notNull().unique().references(() => apps.id, { onDelete: 'cascade' }),
+  category: text('category').notNull(),
+  description: text('description').notNull(),
+})
+
+export const marketplaceStats = pgTable('marketplace_stats', {
+  appId: uuid('app_id').notNull().references(() => apps.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(),
+  installs: integer('installs').notNull().default(0),
+  rating: text('rating'),
+}, (t) => [primaryKey({ columns: [t.appId, t.date] })])
 
 export const aiUsageLogs = pgTable('ai_usage_logs', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -1,4 +1,7 @@
 import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import * as client from '@repo/data'
+import type { MarketplaceListing } from '@repo/data'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -9,6 +12,8 @@ import { Toast } from './components/toast'
 import {
   CATEGORIES,
   MARKETPLACE_APPS,
+  getAppTint,
+  getAppGlyph,
   type MarketplaceApp,
 } from './data'
 
@@ -27,9 +32,28 @@ export function MarketplacePage() {
     })
   }, [search, category])
 
+  const { data: listings = [] } = useQuery({
+    queryKey: ['marketplace-listings'],
+    queryFn: client.getMarketplaceListings,
+  })
+
+  const filteredListings = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return listings.filter(l => {
+      if (category !== 'All' && l.category !== category) return false
+      if (q && !`${l.appName} ${l.description}`.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [listings, search, category])
+
   function handleInstall(app: MarketplaceApp) {
     setInstalling(null)
     setToast(`${app.name} added to your apps`)
+  }
+
+  async function handleInstallListing(listing: MarketplaceListing) {
+    await client.installMarketplaceListing(listing.appId)
+    setToast(`${listing.appName} added to your apps`)
   }
 
   return (
@@ -65,7 +89,7 @@ export function MarketplacePage() {
           </div>
         </div>
 
-        <MarketCurated apps={filtered} onInstall={setInstalling} />
+        <MarketCurated apps={filtered} listings={filteredListings} onInstall={setInstalling} onInstallListing={handleInstallListing} />
       </main>
 
       <Modal
@@ -109,10 +133,14 @@ export function MarketplacePage() {
 
 function MarketCurated({
   apps,
+  listings,
   onInstall,
+  onInstallListing,
 }: {
   apps: MarketplaceApp[]
+  listings: MarketplaceListing[]
   onInstall: (a: MarketplaceApp) => void
+  onInstallListing: (l: MarketplaceListing) => void
 }) {
   const featured = apps.filter(a => a.featured)
   const rest = apps.filter(a => !a.featured)
@@ -172,39 +200,47 @@ function MarketCurated({
 
       <div className="text-xl font-bold tracking-[-0.015em] mt-9 mb-4 text-foreground flex items-baseline gap-3 leading-none">
         Browse all{' '}
-        <small className="text-[13px] text-muted-foreground font-medium">{apps.length} apps</small>
+        <small className="text-[13px] text-muted-foreground font-medium">{listings.length} apps</small>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-9 gap-y-0">
-        {apps.map((a, i) => (
-          <div
-            key={a.id}
-            className={cn(
-              'grid [grid-template-columns:60px_1fr_auto] gap-4 items-center py-3.5 border-t border-border cursor-pointer',
-              i < 2 && 'border-t-0',
-            )}
-            onClick={() => onInstall(a)}
-          >
-            <AppIcon tint={a.tint} glyph={a.glyph} size="lg" />
-            <div className="min-w-0">
-              <h4 className="font-bold text-[15px] m-0 tracking-[-0.005em]">{a.name}</h4>
-              <p className="text-[13px] text-muted-foreground truncate mt-0.5 m-0">{a.description}</p>
-              <div className="text-[12.5px] text-muted-foreground font-medium mt-1">
-                ★ {a.rating} · {a.installs} installs
+      {listings.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground text-[14px]">
+          No apps in the marketplace yet.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-9 gap-y-0">
+          {listings.map((l, i) => {
+            const tint = getAppTint(l.appId)
+            const glyph = getAppGlyph(l.appName)
+            return (
+              <div
+                key={l.id}
+                className={cn(
+                  'grid [grid-template-columns:60px_1fr_auto] gap-4 items-center py-3.5 border-t border-border',
+                  i < 2 && 'border-t-0',
+                )}
+              >
+                <AppIcon tint={tint} glyph={glyph} size="lg" />
+                <div className="min-w-0">
+                  <h4 className="font-bold text-[15px] m-0 tracking-[-0.005em]">{l.appName}</h4>
+                  <p className="text-[13px] text-muted-foreground truncate mt-0.5 m-0">{l.description}</p>
+                  <div className="text-[12.5px] text-muted-foreground font-medium mt-1">
+                    {l.category} · by {l.appCreatorHandle}
+                    {l.totalInstalls > 0 && <> · {l.totalInstalls.toLocaleString()} installs</>}
+                    {l.avgRating != null && <> · ★ {Number(l.avgRating).toFixed(1)}</>}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onInstallListing(l)}
+                >
+                  Add
+                </Button>
               </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={e => {
-                e.stopPropagation()
-                onInstall(a)
-              }}
-            >
-              Add
-            </Button>
-          </div>
-        ))}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </>
   )
 }

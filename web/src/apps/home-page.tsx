@@ -65,7 +65,7 @@ export function HomePage() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-3.5 mb-[22px] flex-wrap">
+        <div className="flex items-center gap-3.5 mb-6 flex-wrap">
           <div className="flex gap-1.5 flex-wrap">
             {CATEGORIES.slice(0, 7).map(c => (
               <button
@@ -183,9 +183,9 @@ function AppCardTile({
   const navigate = useNavigate()
 
   return (
-    <Card className="group hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] transition-all cursor-pointer relative overflow-hidden p-0 gap-0">
+    <Card className="group hover:-translate-y-0.5 hover:shadow-(--shadow-md) transition-all cursor-pointer relative overflow-hidden p-0 gap-0">
       <Link to="/apps/$appId" params={{ appId: app.id }} className="no-underline block">
-        <CardContent className="p-[22px] flex flex-col gap-4">
+        <CardContent className="p-5.5 flex flex-col gap-4">
           {app.status === 'draft' && (
             <Badge
               variant="secondary"
@@ -198,13 +198,13 @@ function AppCardTile({
           <AppIcon tint={app.tint} glyph={app.glyph} />
           <div>
             <h3 className="font-bold text-base text-foreground tracking-[-0.01em] m-0">{app.name}</h3>
-            <p className="text-[13.5px] leading-[1.5] text-muted-foreground mt-1 line-clamp-2 m-0">
+            <p className="text-[13.5px] leading-normal text-muted-foreground mt-1 line-clamp-2 m-0">
               {app.description}
             </p>
           </div>
           <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground font-medium mt-auto">
             <span>{app.category}</span>
-            <span className="size-[3px] rounded-full bg-current opacity-50" />
+            <span className="size-0.75 rounded-full bg-current opacity-50" />
             <span className="capitalize">{app.status}</span>
           </div>
         </CardContent>

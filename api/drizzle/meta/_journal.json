@@ -64,6 +64,13 @@
       "when": 1777933700865,
       "tag": "0008_right_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1746570000000,
+      "tag": "0009_marketplace",
+      "breakpoints": true
     }
   ]
 }
