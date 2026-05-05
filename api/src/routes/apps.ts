@@ -3,7 +3,7 @@ import {
 } from 'fastify'
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, max } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls } from '../db/schema'
@@ -52,15 +52,6 @@ function listApps(fastify: Fastify) {
   }, async (_request, reply) => {
     const userId = getCurrentUserId()
 
-    const installed = await fastify.db
-      .selectDistinct({ appId: appVersions.appId })
-      .from(userAppInstalls)
-      .innerJoin(appVersions, eq(userAppInstalls.versionId, appVersions.id))
-      .where(eq(userAppInstalls.userId, userId))
-
-    const appIds = installed.map(r => r.appId)
-    if (appIds.length === 0) return reply.send([])
-
     const result = await fastify.db
       .select({
         id: apps.id,
@@ -73,8 +64,11 @@ function listApps(fastify: Fastify) {
         updatedAt: apps.updatedAt,
       })
       .from(apps)
-      .where(inArray(apps.id, appIds))
-      .orderBy(desc(apps.updatedAt))
+      .innerJoin(appVersions, eq(apps.id, appVersions.appId))
+      .innerJoin(userAppInstalls, eq(appVersions.id, userAppInstalls.versionId))
+      .where(eq(userAppInstalls.userId, userId))
+      .groupBy(apps.id)
+      .orderBy(desc(max(userAppInstalls.installedAt)))
     return reply.send(result)
   })
 }
