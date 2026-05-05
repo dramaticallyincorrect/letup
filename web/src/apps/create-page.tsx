@@ -10,12 +10,31 @@ import { AppIcon } from './components/app-icon'
 import { AppPreview } from './app-preview'
 import { getAppGlyph, getAppTint } from './data'
 import { SendHorizonal } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export type ChatMessage =
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; streaming: boolean }
-  | { role: 'tool'; name: string }
+  | { role: 'assistant'; content: string; thinking?: string; streaming: boolean }
   | { role: 'question'; questionId: string; question: string; answered: boolean }
+
+function toolLabel(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case 'write_file': {
+      const filename = ((input.path as string) ?? '').split('/').pop() || 'file'
+      return `Writing ${filename}`
+    }
+    case 'read_file': {
+      const filename = ((input.path as string) ?? '').split('/').pop() || 'file'
+      return `Reading ${filename}`
+    }
+    case 'list_files': return 'Checking project files'
+    case 'setup_database': return 'Setting up database'
+    case 'set_app_metadata': return 'Naming the app'
+    case 'ask_user': return 'Preparing question'
+    default: return 'Working…'
+  }
+}
 
 export function CreatePage() {
   return <CreatePageInner />
@@ -43,6 +62,7 @@ export function CreatePageInner({
   const [compiledCode, setCompiledCode] = useState<string | null>(initialCompiledCode)
   const [cssCode, setCssCode] = useState<string | null>(initialCssCode)
   const [isSending, setIsSending] = useState(false)
+  const [currentActivity, setCurrentActivity] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
   const [initError, setInitError] = useState<string | null>(null)
@@ -91,7 +111,19 @@ export function CreatePageInner({
 
       const reader = res.body.getReader()
       for await (const { event, data } of client.parseSSE(reader)) {
-        if (event === 'text') {
+        if (event === 'thinking') {
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                thinking: (last.thinking ?? '') + (data as { text: string }).text,
+              }
+            }
+            return next
+          })
+        } else if (event === 'text') {
           setMessages(prev => {
             const next = [...prev]
             const last = next[next.length - 1]
@@ -104,7 +136,8 @@ export function CreatePageInner({
             return next
           })
         } else if (event === 'tool_call') {
-          setMessages(prev => [...prev, { role: 'tool', name: (data as { name: string }).name }])
+          const { name, input } = data as { name: string; input: Record<string, unknown> }
+          setCurrentActivity(toolLabel(name, input))
         } else if (event === 'widget') {
           const w = data as client.App
           setCompiledCode(w.compiledCode)
@@ -122,10 +155,17 @@ export function CreatePageInner({
           })
         } else if (event === 'user_question') {
           const { questionId, question } = data as { questionId: string; question: string }
-          setMessages(prev => [
-            ...prev,
-            { role: 'question', questionId, question, answered: false },
-          ])
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === 'assistant' && last.streaming) {
+              next[next.length - 1] = { ...last, streaming: false }
+            }
+            return [
+              ...next,
+              { role: 'question', questionId, question, answered: false },
+            ]
+          })
         } else if (event === 'error') {
           setMessages(prev => {
             const next = [...prev]
@@ -156,6 +196,7 @@ export function CreatePageInner({
       })
     }
 
+    setCurrentActivity(null)
     setIsSending(false)
   }
 
@@ -172,6 +213,7 @@ export function CreatePageInner({
         m.role === 'question' && m.questionId === questionId ? { ...m, answered: true } : m,
       ),
       { role: 'user' as const, content: answer },
+      { role: 'assistant' as const, content: '', streaming: true },
     ])
     await client.answerAppQuestion(questionId, answer)
   }
@@ -261,38 +303,43 @@ export function CreatePageInner({
                     </div>
                     <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
                       <div className="text-[12.5px] text-muted-foreground font-bold mb-1">Claude</div>
+
+                      {/* Thinking: animated indicator while thinking, accordion when done */}
+                      {m.streaming && m.thinking && !m.content ? (
+                        <div className="flex items-center gap-2 text-[12px] text-muted-foreground mb-1.5">
+                          <div className="inline-flex gap-1.25">
+                            <span className="size-1.75 rounded-full bg-muted-foreground/50 animate-thinking-dot" />
+                            <span className="size-1.75 rounded-full bg-muted-foreground/50 animate-thinking-dot animate-thinking-dot-2" />
+                            <span className="size-1.75 rounded-full bg-muted-foreground/50 animate-thinking-dot animate-thinking-dot-3" />
+                          </div>
+                          Thinking…
+                        </div>
+                      ) : !m.streaming && m.thinking ? (
+                        <details className="mb-2 group">
+                          <summary className="cursor-pointer list-none text-[11.5px] text-muted-foreground/70 flex items-center gap-1.5 select-none hover:text-muted-foreground transition-colors">
+                            <span className="inline-block transition-transform group-open:rotate-90 text-[9px]">▶</span>
+                            Thought for a moment
+                          </summary>
+                          <div className="mt-1.5 pl-3 border-l-2 border-border text-sm text-muted-foreground whitespace-pre-wrap font-light leading-relaxed max-h-64 overflow-y-auto">
+                            <ReactMarkdown>
+                              {m.thinking}
+                            </ReactMarkdown>
+                          </div>
+                        </details>
+                      ) : null}
+
+                      {/* Text content or initial waiting dots */}
                       {m.content ? (
-                        <p className="m-0 whitespace-pre-wrap font-light text-sm">{m.content}</p>
-                      ) : m.streaming ? (
+                        <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none font-light text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                        </div>
+                      ) : m.streaming && !m.thinking ? (
                         <div className="inline-flex gap-1.25 py-1.5">
                           <span className="size-1.75 rounded-full bg-accent animate-thinking-dot" />
                           <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-2" />
                           <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-3" />
                         </div>
                       ) : null}
-                    </div>
-                  </div>
-                )
-              }
-              if (m.role === 'tool') {
-                return (
-                  <div key={i} className="flex gap-3.5 max-w-full">
-                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
-                      C
-                    </div>
-                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
-                      <div
-                        className="mt-0 px-4 py-3 flex items-center gap-3 text-sm rounded-xl border border-border"
-                        style={{ background: 'var(--warm)' }}
-                      >
-                        <span className="size-6.5 rounded-lg bg-accent text-accent-foreground grid place-items-center text-[13px] shrink-0">
-                          ⚙
-                        </span>
-                        <span className="flex-1 text-foreground font-medium">{m.name}</span>
-                        <span className="text-xs text-accent font-semibold bg-white/60 px-2 py-0.5 rounded-full">
-                          running
-                        </span>
-                      </div>
                     </div>
                   </div>
                 )
@@ -348,6 +395,15 @@ export function CreatePageInner({
 
           {/* Chat composer */}
           <div className="px-5 py-4 pb-5 border-border bg-card shrink-0">
+            {currentActivity && (
+              <div
+                key={currentActivity}
+                className="mb-2.5 flex items-center gap-2 text-[12px] text-muted-foreground animate-activity-in"
+              >
+                <span className="size-1.5 rounded-full bg-accent shrink-0 animate-pulse" />
+                <span className="truncate">{currentActivity}</span>
+              </div>
+            )}
             <div className="bg-card border-[1.5px] border-input rounded-2xl px-4 pt-3.5 pb-3">
               <Textarea
                 rows={1}

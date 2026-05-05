@@ -3,7 +3,7 @@ import {
 } from 'fastify'
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { and, desc, eq, max } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, or } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls } from '../db/schema'
@@ -53,7 +53,7 @@ function listApps(fastify: Fastify) {
     const userId = getCurrentUserId()
 
     const result = await fastify.db
-      .select({
+      .selectDistinct({
         id: apps.id,
         creatorId: apps.creatorId,
         name: apps.name,
@@ -64,11 +64,18 @@ function listApps(fastify: Fastify) {
         updatedAt: apps.updatedAt,
       })
       .from(apps)
-      .innerJoin(appVersions, eq(apps.id, appVersions.appId))
-      .innerJoin(userAppInstalls, eq(appVersions.id, userAppInstalls.versionId))
-      .where(eq(userAppInstalls.userId, userId))
-      .groupBy(apps.id)
-      .orderBy(desc(max(userAppInstalls.installedAt)))
+      .leftJoin(appVersions, eq(appVersions.appId, apps.id))
+      .leftJoin(
+        userAppInstalls,
+        and(eq(userAppInstalls.versionId, appVersions.id), eq(userAppInstalls.userId, userId)),
+      )
+      .where(
+        or(
+          isNotNull(userAppInstalls.userId),
+          and(eq(apps.creatorId, userId), eq(appVersions.isDraft, true)),
+        ),
+      )
+      .orderBy(desc(apps.updatedAt))
     return reply.send(result)
   })
 }
@@ -420,17 +427,6 @@ function stripCacheControl(messages: Anthropic.MessageParam[]): Anthropic.Messag
 }
 
 // ---------------------------------------------------------------------------
-// Extract plain text from a completed agent loop's final assistant message
-// ---------------------------------------------------------------------------
-function extractText(messages: Anthropic.MessageParam[]): string {
-  const last = messages.at(-1)
-  if (!last || last.role !== 'assistant') return ''
-  if (typeof last.content === 'string') return last.content
-  return (last.content as Anthropic.ContentBlock[])
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map(b => b.text)
-    .join('')
-}
 
 // ---------------------------------------------------------------------------
 // Shared helper — load app joined with its latest version
@@ -565,10 +561,7 @@ function buildApp(fastify: Fastify) {
             target: [appVersions.appId, appVersions.versionNumber],
             set: { compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, isDraft: true },
           })
-        await fastify.db
-          .update(apps)
-          .set({ updatedAt: new Date() })
-          .where(eq(apps.id, appId))
+
         return { success: true }
       } catch (err) {
         return { error: err instanceof Error ? err.message : 'Compile failed' }
@@ -633,22 +626,19 @@ function buildApp(fastify: Fastify) {
     }
 
     try {
-      let designPlan = ''
+      let planMessages: Anthropic.MessageParam[] = []
 
       if (!isRefinement) {
-        // -----------------------------------------------------------------------
-        // PASS 0 — Plan (with ask_user tool for clarification)
-        // -----------------------------------------------------------------------
-        // sendEvent('text', { text: '**Planning the design…**\n\n' })
 
-        const planMessages = await runAgentLoop({
+        planMessages = await runAgentLoop({
           messages: [{ role: 'user', content: userMessage }],
           tools: [askUserTool],
           system: PLAN_SYSTEM,
           maxTokens: 2048 * 4,
           thinking: { budget_tokens: 1024 * 3 },
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onThinking: (delta) => sendEvent('text', { text: delta }),
+          onThinking: (delta) => sendEvent('thinking', { text: delta }),
+          onText: (delta) => sendEvent('text', { text: delta }),
           onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
           onUsage: async (usage, model) => {
             const mu = tokensToMicroUnits(usage, model)
@@ -656,132 +646,132 @@ function buildApp(fastify: Fastify) {
             await logUsage(fastify.db, userId, 'build', model, usage, mu)
           },
         })
-        designPlan = extractText(planMessages)
 
-        // -----------------------------------------------------------------------
-        // PASS 1 — Design System (creates styles.css)
-        // -----------------------------------------------------------------------
-        // sendEvent('text', { text: '\n\n---\n\n**Creating design system…**\n\n' })
+        console.log('plan messages are', planMessages)
 
-        const shadcnPass1 = await createShadcnMcpTools()
-        // try {
-        //   await runAgentLoop({
-        //     messages: [{ role: 'user', content: `Design plan:\n${designPlan}\n\nCreate the styles.css design system for this app.` }],
-        //     tools: [...shadcnPass1.tools, writeFileTool],
-        //     system: DESIGN_SYSTEM_PROMPT,
-        //     maxTokens: 16000,
-        //     thinking: { budget_tokens: 8000 },
-        //     ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-        //     onThinking: (delta) => sendEvent('text', { text: delta }),
-        //     onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-        //   })
-        // } finally {
-        //   await shadcnPass1.close()
-        // }
       }
 
-      const designSystemCSS = virtualFiles.get('styles.css') ?? ''
-
-      // sendEvent('text', { text: isRefinement ? '**Updating the app…**\n\n' : '\n\n---\n\n**Building the app…**\n\n' })
-
-      // -----------------------------------------------------------------------
-      // PASS 2 — Build (extended thinking + cached system prompt)
-      // -----------------------------------------------------------------------
-      const buildUserMessage = isRefinement
-        ? userMessage
-        : (designPlan
-          ? `Execute this plan and build the website:${designPlan}\n\n`
-          : userMessage)
+      const buildMessages: Anthropic.MessageParam[] = isRefinement
+        ? messages
+        : planMessages.length > 0
+          ? [...markLastTurnCacheable(planMessages), { role: 'user', content: 'Now execute this plan and build the app.' }]
+          : [{ role: 'user', content: userMessage }]
 
       let finalMessages: Anthropic.MessageParam[] = []
       const shadcnPass2 = await createShadcnMcpTools()
       try {
-        finalMessages = await runAgentLoop({
-          messages: [...messages.slice(0, -1), { role: 'user', content: buildUserMessage }],
-          tools: [
-            ...shadcnPass2.tools,
-            {
-              name: 'setup_database',
-              description: 'Initialize the app database schema. Run CREATE TABLE IF NOT EXISTS statements and optional seed data. Call this once before writing any code that uses the db module.',
-              input_schema: {
-                type: 'object' as const,
-                properties: {
-                  sql: { type: 'string', description: 'One or more SQL statements (CREATE TABLE, INSERT seed data, etc.)' },
-                },
-                required: ['sql'],
+        const buildTools = [
+          ...shadcnPass2.tools,
+          {
+            name: 'setup_database',
+            description: 'Initialize the app database schema. Run CREATE TABLE IF NOT EXISTS statements and optional seed data. Call this once before writing any code that uses the db module.',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                sql: { type: 'string', description: 'One or more SQL statements (CREATE TABLE, INSERT seed data, etc.)' },
               },
-              handler: async (input: Record<string, unknown>) => {
-                const schemaSQL = input.sql as string
-                // Persist schema in the draft version row
-                await fastify.db
-                  .insert(appVersions)
-                  .values({ appId, versionNumber: targetVersionNumber, dbSchema: schemaSQL, isDraft: true })
-                  .onConflictDoUpdate({
-                    target: [appVersions.appId, appVersions.versionNumber],
-                    set: { dbSchema: schemaSQL, isDraft: true },
-                  })
-                await fastify.db
-                  .update(apps)
-                  .set({ updatedAt: new Date() })
-                  .where(eq(apps.id, appId))
-                // Apply only to draft DB — never touch the published DB during build
-                const draft = openDraftDb(appId)
-                try { draft.exec(schemaSQL) } finally { draft.close() }
-                return { success: true }
-              },
+              required: ['sql'],
             },
-            {
-              name: 'set_app_metadata',
-              description: 'Set the display name and one-sentence description for the app.',
-              input_schema: {
-                type: 'object' as const,
-                properties: {
-                  name: { type: 'string' },
-                  description: { type: 'string' },
-                },
-                required: ['name', 'description'],
-              },
-              handler: async (input: Record<string, unknown>) => {
-                agentState.name = input.name as string
-                agentState.description = input.description as string
-                await fastify.db
-                  .update(apps)
-                  .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
-                  .where(eq(apps.id, appId))
-                return { success: true }
-              },
+            handler: async (input: Record<string, unknown>) => {
+              const schemaSQL = input.sql as string
+              await fastify.db
+                .insert(appVersions)
+                .values({ appId, versionNumber: targetVersionNumber, dbSchema: schemaSQL, isDraft: true })
+                .onConflictDoUpdate({
+                  target: [appVersions.appId, appVersions.versionNumber],
+                  set: { dbSchema: schemaSQL, isDraft: true },
+                })
+              await fastify.db
+                .update(apps)
+                .set({ updatedAt: new Date() })
+                .where(eq(apps.id, appId))
+              const draft = openDraftDb(appId)
+              try { draft.exec(schemaSQL) } finally { draft.close() }
+              return { success: true }
             },
-            writeFileTool,
-            readFileTool,
-            listFilesTool,
-          ],
+          },
+          {
+            name: 'set_app_metadata',
+            description: 'Set the display name and one-sentence description for the app.',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                name: { type: 'string' },
+                description: { type: 'string' },
+              },
+              required: ['name', 'description'],
+            },
+            handler: async (input: Record<string, unknown>) => {
+              agentState.name = input.name as string
+              agentState.description = input.description as string
+              await fastify.db
+                .update(apps)
+                .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
+                .where(eq(apps.id, appId))
+              return { success: true }
+            },
+          },
+          writeFileTool,
+          readFileTool,
+          listFilesTool,
+        ]
+
+        const buildLoopParams = {
+          tools: buildTools,
           system: BUILD_SYSTEM,
           maxTokens: 16000,
           thinking: { budget_tokens: 8000 },
           ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onThinking: (delta) => sendEvent('text', { text: delta }),
-          onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-          onUsage: async (usage, model) => {
+          onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
+          onText: (delta: string) => sendEvent('text', { text: delta }),
+          onToolCall: (name: string, input: unknown, result: unknown) => sendEvent('tool_call', { name, input, result }),
+          onUsage: async (usage: Anthropic.Usage, model: string) => {
             const mu = tokensToMicroUnits(usage, model)
             await checkAndDeductCredits(fastify.db, userId, mu)
             await logUsage(fastify.db, userId, 'build', model, usage, mu)
           },
+        }
+
+        finalMessages = await runAgentLoop({
+          messages: buildMessages,
+          ...buildLoopParams,
         })
+
+        const MAX_COMPILE_RETRIES = 2
+        for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
+          if (virtualFiles.size === 0) break
+          const compileResult = await compileAndPersist()
+          if (!('error' in compileResult)) break
+          if (attempt === MAX_COMPILE_RETRIES) {
+            sendEvent('error', { message: `Compile error: ${compileResult.error}` })
+            break
+          }
+          const retryMessages = markLastTurnCacheable(finalMessages)
+          retryMessages.push({ role: 'user', content: `Compilation failed with this error:\n\n${compileResult.error}\n\nPlease fix the issue.` })
+          finalMessages = await runAgentLoop({ messages: retryMessages, ...buildLoopParams })
+        }
       } finally {
         await shadcnPass2.close()
       }
 
-      // Compile after build pass
-      if (virtualFiles.size > 0) {
-        const compileResult = await compileAndPersist()
-        if ('error' in compileResult) {
-          sendEvent('error', { message: `Compile error: ${compileResult.error}` })
-        }
-      }
-
+      // For new builds: save full plan messages (including thinking blocks) + build trigger + build turns.
+      // Thinking blocks must be preserved so the API can replay them correctly in future refinements.
+      // For refinements: finalMessages already has the correct structure.
+      const historyToSave: Anthropic.MessageParam[] = isRefinement
+        ? finalMessages
+        : planMessages.length > 0
+          ? [
+            ...planMessages,
+            { role: 'user' as const, content: 'Now execute this plan and build the app.' },
+            ...finalMessages.slice(buildMessages.length),
+          ]
+          : [
+            { role: 'user', content: userMessage },
+            ...finalMessages.slice(buildMessages.length),
+          ]
       await fastify.db
         .update(apps)
-        .set({ conversationHistory: stripCacheControl(finalMessages) as unknown[], updatedAt: new Date() })
+        .set({ conversationHistory: stripCacheControl(historyToSave) as unknown[], updatedAt: new Date() })
         .where(eq(apps.id, appId))
 
       const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)

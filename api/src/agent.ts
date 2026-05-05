@@ -146,13 +146,13 @@ export async function runAgentLoop(params: {
         let result: unknown
 
         if (toolDef) {
+          onToolCall?.(block.name, input, result)
           result = await toolDef.handler(input)
         } else {
           result = { error: `Unknown tool: ${block.name}` }
         }
 
         console.log(`[agent]   executed local tool: ${block.name} → ${JSON.stringify(result).slice(0, 80)}`)
-        onToolCall?.(block.name, input, result)
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,

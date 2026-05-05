@@ -2,25 +2,13 @@
 
 a marketplace for user created app
 
-## minimal core
-1. create app
-   1. ~~polished ui~~
-   2. ~~chat history~~
-   3. ~~data access~~
-   4. ~~agent access~~
-   5. ~~usage~~
-      1. ~~create apps usage~~
-      2. ~~apps with ai usage~~
+## second pass
 
-## market place
-
-1. submit to review
-2. approve and publish
-
-## Home Page
-1. list apps
-2. list market place
-3. install from market place
+1. tests for backend
+2. show drafts in app list
+3. submit updates to marketplace
+4. fetch_url tool
+5. request_ai_access
 
 ## infra
 

@@ -3,38 +3,50 @@ import { useParams } from '@tanstack/react-router'
 import * as client from '@repo/data'
 import { CreatePageInner, type ChatMessage } from './create-page'
 
+const INTERNAL_USER_MESSAGES = new Set(['Now execute this plan and build the app.'])
+
 function historyToChatMessages(history: unknown[]): ChatMessage[] {
   type Msg = { role: string; content: unknown }
   type Block = { type: string; text?: string; thinking?: string }
 
   const result: ChatMessage[] = []
-  let pendingAssistantText = ''
+  let pendingText = ''
+  let pendingThinking = ''
+
+  function flushAssistant() {
+    if (pendingText || pendingThinking) {
+      result.push({
+        role: 'assistant',
+        content: pendingText,
+        thinking: pendingThinking || undefined,
+        streaming: false,
+      })
+      pendingText = ''
+      pendingThinking = ''
+    }
+  }
 
   for (const msg of history as Msg[]) {
     if (msg.role === 'user') {
-      if (typeof msg.content === 'string') {
-        // Round-trip boundary: flush accumulated assistant text first
-        if (pendingAssistantText) {
-          result.push({ role: 'assistant', content: pendingAssistantText, streaming: false })
-          pendingAssistantText = ''
-        }
-        // Extract the original user message from the synthetic build message
+      if (typeof msg.content === 'string' && !INTERNAL_USER_MESSAGES.has(msg.content)) {
+        flushAssistant()
         const match = msg.content.match(/User request:\s*([\s\S]+)$/)
         const userText = match ? match[1].trim() : msg.content
         result.push({ role: 'user', content: userText })
       }
-      // Array content = tool_result messages → skip
+      // Array content = tool_result messages, or internal trigger messages → skip
     } else if (msg.role === 'assistant') {
-      const text = Array.isArray(msg.content)
-        ? (msg.content as Block[]).filter(b => b.type === 'text' || b.type == 'thinking').map(b => b.text ?? b.thinking ?? '').join('')
-        : typeof msg.content === 'string' ? msg.content : ''
-      if (text) pendingAssistantText += text
+      if (Array.isArray(msg.content)) {
+        const blocks = msg.content as Block[]
+        pendingText += blocks.filter(b => b.type === 'text').map(b => b.text ?? '').join('')
+        pendingThinking += blocks.filter(b => b.type === 'thinking').map(b => b.thinking ?? '').join('')
+      } else if (typeof msg.content === 'string') {
+        pendingText += msg.content
+      }
     }
   }
 
-  if (pendingAssistantText) {
-    result.push({ role: 'assistant', content: pendingAssistantText, streaming: false })
-  }
+  flushAssistant()
 
   return result
 }
