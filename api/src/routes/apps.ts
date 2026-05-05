@@ -1,13 +1,13 @@
 import {
   type FastifyPluginAsync,
 } from 'fastify'
-import { readFileSync, unlinkSync, rmSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls } from '../db/schema'
-import { openDb, getDbPath, openDraftDb, getDraftDbPath, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
+import { openDb, openDraftDb, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
 import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from '../credits'
@@ -30,7 +30,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   getAppForEdit(fastify)
   patchApp(fastify)
   installApp(fastify)
-  deleteApp(fastify)
+  uninstallApp(fastify)
   buildApp(fastify)
   answerAppQuestion(fastify)
   queryAppDb(fastify)
@@ -320,14 +320,24 @@ function installApp(fastify: Fastify) {
 }
 
 
-function deleteApp(fastify: Fastify) {
+function uninstallApp(fastify: Fastify) {
   fastify.delete<{ Params: { appId: string } }>('/apps/:appId', {
-    schema: { tags: ['apps'], summary: 'Delete an app' },
+    schema: { tags: ['apps'], summary: 'Uninstall an app for the current user' },
   }, async (request, reply) => {
     const { appId } = request.params
-    await fastify.db.delete(apps).where(eq(apps.id, appId))
-    try { unlinkSync(getDbPath(appId)) } catch { /* file may not exist */ }
-    try { rmSync(getDraftDbPath(appId)) } catch { /* file may not exist */ }
+    const userId = getCurrentUserId()
+
+    const versionIds = await fastify.db
+      .select({ versionId: appVersions.id })
+      .from(appVersions)
+      .where(eq(appVersions.appId, appId))
+
+    for (const { versionId } of versionIds) {
+      await fastify.db
+        .delete(userAppInstalls)
+        .where(and(eq(userAppInstalls.userId, userId), eq(userAppInstalls.versionId, versionId)))
+    }
+
     return reply.code(204).send()
   })
 }
@@ -779,108 +789,6 @@ function buildApp(fastify: Fastify) {
         .update(apps)
         .set({ conversationHistory: stripCacheControl(finalMessages) as unknown[], updatedAt: new Date() })
         .where(eq(apps.id, appId))
-
-      // // -----------------------------------------------------------------------
-      // // PASS 3 — Polish (cached system prompt) — first build only
-      // // -----------------------------------------------------------------------
-      // if (!isRefinement && virtualFiles.size > 0) {
-      //   // sendEvent('text', { text: '\n\n**Polishing the UI…**\n\n' })
-
-      //   const filesSummary = [...virtualFiles.entries()]
-      //     .map(([path, content]) => {
-      //       const lang = path.endsWith('.css') ? 'css' : 'tsx'
-      //       return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
-      //     })
-      //     .join('\n\n')
-
-      //   await runAgentLoop({
-      //     messages: [
-      //       {
-      //         role: 'user',
-      //         content: [
-      //           { type: 'text', text: `Design plan:\n${designPlan}\n\nOriginal request: "${userMessage}"\n\nCurrent files:\n${filesSummary}`, cache_control: { type: 'ephemeral' } },
-      //           { type: 'text', text: 'Polish the UI — keep all functionality identical. Use CSS variables from styles.css throughout. Do NOT modify styles.css.' },
-      //         ],
-      //       },
-      //     ],
-      //     tools: [writeFileTool, readFileTool, listFilesTool],
-      //     system: POLISH_SYSTEM,
-      //     maxTokens: 16000,
-      //     thinking: { budget_tokens: 8000 },
-      //     ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-      //     onThinking: (delta) => sendEvent('text', { text: delta }),
-      //     onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-      //   })
-
-      //   // Compile after polish
-      //   const polishCompileResult = await compileAndPersist()
-      //   if ('error' in polishCompileResult) {
-      //     sendEvent('error', { message: `Polish compile error: ${polishCompileResult.error}` })
-      //   }
-      // }
-
-      // -----------------------------------------------------------------------
-      // PASS 4 — Critic (no tools, cached system prompt, silent) — first build only
-      // -----------------------------------------------------------------------
-      // if (!isRefinement && virtualFiles.size > 0) {
-      //   // sendEvent('text', { text: '\n\n**Quality check…**\n\n' })
-
-      //   const filesSummary = [...virtualFiles.entries()]
-      //     .map(([path, content]) => {
-      //       const lang = path.endsWith('.css') ? 'css' : 'tsx'
-      //       return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
-      //     })
-      //     .join('\n\n')
-
-      //   const criticMessages = await runAgentLoop({
-      //     messages: [{ role: 'user', content: [{ type: 'text', text: filesSummary, cache_control: { type: 'ephemeral' } }] }],
-      //     system: CRITIC_SYSTEM,
-      //     maxTokens: 4096,
-      //     thinking: { budget_tokens: 2048 },
-      //     ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-      //     onThinking: (delta) => sendEvent('text', { text: delta }),
-      //   })
-
-      //   const criticOutput = extractText(criticMessages).trim()
-
-      //   // -----------------------------------------------------------------------
-      //   // PASS 4 — Fix (only if critic found issues)
-      //   // -----------------------------------------------------------------------
-      //   if (criticOutput && criticOutput !== 'PASS') {
-      //     // sendEvent('text', { text: '\n\n**Fixing identified issues…**\n\n' })
-
-      //     const currentFilesSummary = [...virtualFiles.entries()]
-      //       .map(([path, content]) => {
-      //         const lang = path.endsWith('.css') ? 'css' : 'tsx'
-      //         return `### ${path}\n\`\`\`${lang}\n${content}\n\`\`\``
-      //       })
-      //       .join('\n\n')
-
-      //     await runAgentLoop({
-      //       messages: [
-      //         {
-      //           role: 'user',
-      //           content: [
-      //             { type: 'text', text: `Current files:\n${currentFilesSummary}`, cache_control: { type: 'ephemeral' } },
-      //             { type: 'text', text: `The following design issues were found:\n${criticOutput}\n\nFix only these specific issues in the relevant files. Keep everything else unchanged.` },
-      //           ],
-      //         },
-      //       ],
-      //       tools: [writeFileTool, readFileTool, listFilesTool],
-      //       system: POLISH_SYSTEM,
-      //       maxTokens: 16000,
-      //       thinking: { budget_tokens: 8000 },
-      //       ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-      //       onThinking: (delta) => sendEvent('text', { text: delta }),
-      //       onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-      //     })
-
-      //     const fixCompileResult = await compileAndPersist()
-      //     if ('error' in fixCompileResult) {
-      //       sendEvent('error', { message: `Fix compile error: ${fixCompileResult.error}` })
-      //     }
-      //   }
-      // }
 
       const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
       sendEvent('widget', updated)

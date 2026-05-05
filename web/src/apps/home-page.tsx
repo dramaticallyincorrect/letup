@@ -109,9 +109,9 @@ function LibraryView({
     if (!pendingDelete) return
     setIsDeleting(true)
     try {
-      await client.deleteApp(pendingDelete.id)
+      await client.uninstallApp(pendingDelete.id)
       await queryClient.invalidateQueries({ queryKey: ['widgets'] })
-      onToast(`"${pendingDelete.name}" deleted`)
+      onToast(`"${pendingDelete.name}" uninstalled`)
     } finally {
       setIsDeleting(false)
       setPendingDelete(null)
@@ -155,19 +155,19 @@ function LibraryView({
       <Modal
         open={!!pendingDelete}
         onClose={() => setPendingDelete(null)}
-        title={pendingDelete ? <>Delete "{pendingDelete.name}"?</> : null}
+        title={pendingDelete ? <>Uninstall "{pendingDelete.name}"?</> : null}
         footer={
           <>
             <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={isDeleting}>
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleConfirmDelete} disabled={isDeleting}>
-              {isDeleting ? 'Deleting…' : 'Delete'}
+              {isDeleting ? 'Uninstalling…' : 'Uninstall'}
             </Button>
           </>
         }
       >
-        <p className="m-0">This will permanently delete the app and all its data. This cannot be undone.</p>
+        <p className="m-0">This will remove the app from your library.</p>
       </Modal>
     </>
   )
@@ -238,7 +238,7 @@ function AppCardTile({
                 onDeleteRequest(app)
               }}
             >
-              Delete
+              Uninstall
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

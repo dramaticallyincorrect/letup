@@ -111,7 +111,7 @@ export async function patchApp(
   return res.json()
 }
 
-export async function deleteApp(appId: string): Promise<void> {
+export async function uninstallApp(appId: string): Promise<void> {
   await apiFetch(`/apps/${appId}`, { method: 'DELETE' })
 }
 
