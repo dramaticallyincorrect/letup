@@ -92,6 +92,36 @@ await query('DELETE FROM items WHERE id = ?', [id])
 
 Always show a loading state while queries are in flight. Handle errors with try/catch and show a friendly error message.
 
+## Client-side routing — navigate between pages
+
+For apps with multiple pages, import from the `router` module:
+
+```tsx
+import { useRouter, Link } from 'router'
+
+export default function App({ data }: { data: Record<string, unknown> }) {
+  const { path, navigate } = useRouter()
+
+  return (
+    <div className="widget-root">
+      {path === '/' && <HomePage />}
+      {path === '/settings' && <SettingsPage navigate={navigate} />}
+
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/settings">Settings</Link>
+      </nav>
+    </div>
+  )
+}
+```
+
+- `useRouter()` returns `{ path: string, navigate: (to: string) => void }`
+- `path` starts as `'/'` and updates on navigation
+- `navigate('/settings')` changes the route programmatically
+- `<Link to="/page">` renders an anchor that drives the router
+- Routes use URL hash — they don't conflict with the outer app
+
 ## AI capabilities — call Claude from within the app
 
 If the app needs to generate text, answer questions, write content, or produce any AI-driven output, import from the `ai` module:

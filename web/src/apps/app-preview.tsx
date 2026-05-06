@@ -30,6 +30,21 @@ function scopeCss(css: string): string {
   return postcss([prefixSelector({ prefix: `.${WIDGET_SCOPE}` })]).process(css, { from: undefined }).css
 }
 
+const routerModule = {
+  useRouter: () => {
+    const [path, setPath] = React.useState<string>(() => window.location.hash.slice(1) || '/')
+    React.useEffect(() => {
+      const handler = () => setPath(window.location.hash.slice(1) || '/')
+      window.addEventListener('hashchange', handler)
+      return () => window.removeEventListener('hashchange', handler)
+    }, [])
+    const navigate = React.useCallback((to: string) => { window.location.hash = to }, [])
+    return { path, navigate }
+  },
+  Link: ({ to, children, ...props }: { to: string; children: React.ReactNode; [key: string]: unknown }) =>
+    React.createElement('a', { href: `#${to}`, ...props }, children),
+}
+
 // Modules the widget sandbox can import via require()
 const shadcnRegistry: Record<string, Record<string, unknown>> = {
   'framer-motion': FramerMotion as unknown as Record<string, unknown>,
@@ -125,6 +140,7 @@ export function AppPreview({
       const moduleObj = { exports: exportsObj }
       const req = (name: string) => {
         if (name === 'react') return React
+        if (name === 'router') return routerModule
         if (name === 'db') return {
           query: (sql: string, params?: unknown[]) => appId ? queryAppDb(appId, sql, params, draft) : Promise.reject(new Error('No appId')),
         }
