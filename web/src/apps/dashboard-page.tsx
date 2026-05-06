@@ -44,6 +44,7 @@ export function DashboardPage() {
   )
 
   function openSubmitModal(app: client.AppSummary) {
+    if (app.status == 'draft') return
     const sub = submissionByApp[app.id]
     setSubmitModal({
       appId: app.id,
@@ -63,10 +64,10 @@ export function DashboardPage() {
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <Chrome active="dashboard" />
 
-      <main className="max-w-[1280px] mx-auto px-8 pt-12 pb-24 max-[900px]:px-4 max-[900px]:pt-8">
+      <main className="max-w-7xl mx-auto px-8 pt-12 pb-24 max-[900px]:px-4 max-[900px]:pt-8">
         <div className="mb-9">
           <h1 className="text-[34px] font-bold tracking-tight mb-1.5 text-foreground leading-none">
-            Developer <span className="text-accent">Dashboard</span>
+            Your <span className="text-accent">Dashboard</span>
           </h1>
           <p className="text-[15px] text-muted-foreground m-0">
             Manage and publish your apps to the marketplace
@@ -83,12 +84,11 @@ export function DashboardPage() {
             <p>No apps yet — create your first one!</p>
           </div>
         ) : (
-          <div className="border border-border rounded-[var(--radius-lg)] overflow-hidden">
+          <div className="border border-border rounded-(--radius-lg) overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-secondary/40">
                   <th className="text-left px-5 py-3 font-semibold text-muted-foreground">App</th>
-                  <th className="text-left px-5 py-3 font-semibold text-muted-foreground">Status</th>
                   <th className="text-left px-5 py-3 font-semibold text-muted-foreground">Submission</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -124,19 +124,6 @@ export function DashboardPage() {
                         </div>
                       </td>
                       <td className="px-5 py-4">
-                        <Badge
-                          variant="secondary"
-                          className="text-[11px] font-semibold capitalize"
-                          style={
-                            app.status === 'published'
-                              ? { background: 'var(--tint-sage-bg)', color: 'var(--tint-sage-fg)' }
-                              : { background: 'var(--tint-amber-bg)', color: 'var(--tint-amber-fg)' }
-                          }
-                        >
-                          {app.status}
-                        </Badge>
-                      </td>
-                      <td className="px-5 py-4">
                         {isApproved && (
                           <Badge
                             variant="secondary"
@@ -169,7 +156,7 @@ export function DashboardPage() {
                             disabled={!canSubmit}
                             onClick={() => openSubmitModal(app)}
                           >
-                            {isPending ? 'Resubmit' : 'Submit to marketplace'}
+                            {app.status == 'draft' ? 'Draft cannot be published' : isPending ? 'Resubmit' : 'Submit to marketplace'}
                           </Button>
                         )}
                       </td>

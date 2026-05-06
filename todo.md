@@ -4,11 +4,17 @@ a marketplace for user created app
 
 ## second pass
 
-1. tests for backend
-2. show drafts in app list
-3. submit updates to marketplace
-4. fetch_url tool
-5. request_ai_access
+1. app builder with file access and install npm modules
+2. updates to the app with database change
+3. delete draft
+4. install created apps from dashboard
+5. show app preview (render without passing ai or db) in marketplace
+6. submit updates to marketplace
+7. request_ai_access
+8. marketplace
+   1. show grid of apps
+   2. search apps
+9. official apps
 
 ## infra
 

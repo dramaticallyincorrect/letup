@@ -12,13 +12,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, PlusIcon } from 'lucide-react'
+import { MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react'
 import { Chrome } from './components/chrome'
 import { AppIcon } from './components/app-icon'
 import { Modal } from './components/modal'
 import { Toast } from './components/toast'
 import {
-  CATEGORIES,
   widgetToAppCard,
   type AppCard,
 } from './data'
@@ -55,14 +54,14 @@ export function HomePage() {
               Your <span className="text-accent not-italic">apps</span>
             </h1>
             <p className="text-[15px] text-muted-foreground m-0">
-              {myApps.length} little tools, made by you for you
+              <br></br>
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3.5 mb-6 flex-wrap">
           <div className="flex gap-1.5 flex-wrap">
-            {CATEGORIES.slice(0, 7).map(c => (
+            {['All', ...new Set(myApps.map((e) => e.category))].slice(0, 7).map(c => (
               <button
                 key={c}
                 className={cn(
@@ -75,6 +74,15 @@ export function HomePage() {
               </button>
             ))}
           </div>
+          <label className="ml-auto flex items-center gap-2 w-70 h-9 px-3.5 bg-secondary rounded-full border border-transparent focus-within:border-input focus-within:bg-card transition-colors cursor-text max-[900px]:w-[160px]">
+            <SearchIcon size='16' />
+            <input
+              className="flex-1 min-w-0 h-full bg-transparent border-0 text-sm text-foreground outline-none placeholder:text-muted-foreground font-sans"
+              placeholder="Search apps…"
+              value={search}
+              onChange={e => setSearch?.(e.target.value)}
+            />
+          </label>
         </div>
 
         <LibraryView apps={filteredMine} loading={isPending} onToast={setToast} />
@@ -199,8 +207,6 @@ function AppCardTile({
           </div>
           <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground font-medium mt-auto">
             <span>{app.category}</span>
-            <span className="size-0.75 rounded-full bg-current opacity-50" />
-            <span className="capitalize">{app.status}</span>
           </div>
         </CardContent>
       </Link>

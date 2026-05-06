@@ -7,12 +7,13 @@
     "test": "test"
   },
   "scripts": {
-    "test": "pnpm run build:ts && tsc -p test/tsconfig.json && c8 node --test -r ts-node/register \"test/**/*.ts\"",
+    "test": "vitest run --mode test",
     "start": "pnpm run build:ts && node dist/server.js",
     "build:ts": "tsc",
     "dev": "tsx watch src/server.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:test": "drizzle-kit migrate --config drizzle.test.config.ts",
     "db:studio": "drizzle-kit studio"
   },
   "keywords": [],
@@ -32,9 +33,11 @@
     "esbuild": "^0.28.0",
     "fastify": "^5.0.0",
     "fastify-plugin": "^5.0.0",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9",
+    "vitest": "^4.1.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
     "c8": "^11.0.0",
