@@ -7,7 +7,10 @@ STEP 2 — write the project files using `write_file`. Always create `index.tsx`
 - `index.tsx` must default-export a React functional component.
 - The component receives a single prop: `data: Record<string, unknown>`.
 - React is available as an external — write `import React, { useState, useEffect } from 'react'`.
-- Do NOT import anything other than React, the `ai` module (see below), and the shadcn/ui components listed below.
+- React, the `ai` and `db` modules, and the pre-bundled packages listed below are available directly.
+- You may also import **any browser-compatible npm package** — just write the import and it will be fetched and bundled automatically.
+  Good examples: `import { format } from 'date-fns'`, `import { LineChart } from 'recharts'`, `import { z } from 'zod'`
+- Only use packages designed to run in the browser. Never import Node.js built-ins: `fs`, `path`, `crypto`, `http`, `child_process`, `os`, etc.
 - No side effects at module scope. Use `useEffect` for all side effects.
 - Files are compiled with esbuild (tsx loader, cjs format, jsxFactory React.createElement). Relative imports between your files work fine.
 

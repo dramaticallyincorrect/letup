@@ -367,6 +367,8 @@ function resolveVirtualPath(importerPath: string, importPath: string, files: Map
   return null
 }
 
+const esmShCache = new Map<string, string>()
+
 async function compileVirtualFiles(files: Map<string, string>): Promise<string> {
   const result = await build({
     entryPoints: ['index.tsx'],
@@ -402,6 +404,31 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
             if (content == null) return { errors: [{ text: `File not found: ${args.path}` }] }
             const loader = args.path.endsWith('.tsx') ? 'tsx' : args.path.endsWith('.ts') ? 'ts' : 'js'
             return { contents: content, loader }
+          })
+        },
+      },
+      {
+        name: 'esm-sh',
+        setup(b) {
+          // Resolve bare npm specifiers (not already external, not virtual files) to esm.sh
+          b.onResolve({ filter: /^[^./]/ }, args => {
+            if (args.namespace === 'virtual') return null
+            return { path: `https://esm.sh/${args.path}`, namespace: 'esm-sh' }
+          })
+          // Resolve relative imports within esm.sh modules
+          b.onResolve({ filter: /.*/, namespace: 'esm-sh' }, args => ({
+            path: new URL(args.path, args.importer).toString(),
+            namespace: 'esm-sh',
+          }))
+          // Fetch and cache module source from esm.sh
+          b.onLoad({ filter: /.*/, namespace: 'esm-sh' }, async args => {
+            const cached = esmShCache.get(args.path)
+            if (cached) return { contents: cached, loader: 'js' as const }
+            const res = await fetch(args.path)
+            if (!res.ok) throw new Error(`esm.sh fetch failed for ${args.path}: ${res.status}`)
+            const contents = await res.text()
+            esmShCache.set(args.path, contents)
+            return { contents, loader: 'js' as const }
           })
         },
       },

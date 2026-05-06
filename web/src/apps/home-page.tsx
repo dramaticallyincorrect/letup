@@ -93,7 +93,6 @@ export function HomePage() {
   )
 }
 
-// ── Library view ──────────────────────────────────────────────────────
 
 function LibraryView({
   apps,
