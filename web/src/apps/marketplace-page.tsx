@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Chrome } from './components/chrome'
 import { AppIcon } from './components/app-icon'
 import { Toast } from './components/toast'
+import { AppPreviewDialog } from './components/app-preview-dialog'
 import {
   CATEGORIES,
   getAppTint,
@@ -18,6 +19,8 @@ export function MarketplacePage() {
   const [category, setCategory] = useState('All')
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState<string | null>(null)
+  const [selectedListing, setSelectedListing] = useState<MarketplaceListing | null>(null)
+  const [installing, setInstalling] = useState(false)
 
   const { data: listings = [] } = useQuery({
     queryKey: ['marketplace-listings'],
@@ -34,8 +37,14 @@ export function MarketplacePage() {
   }, [listings, search, category])
 
   async function handleInstallListing(listing: MarketplaceListing) {
-    await client.installMarketplaceListing(listing.appId)
-    setToast(`${listing.appName} added to your apps`)
+    setInstalling(true)
+    try {
+      await client.installMarketplaceListing(listing.appId)
+      setToast(`${listing.appName} added to your apps`)
+      setSelectedListing(null)
+    } finally {
+      setInstalling(false)
+    }
   }
 
   return (
@@ -91,6 +100,7 @@ export function MarketplacePage() {
                 <Card
                   key={l.id}
                   className="hover:shadow-(--shadow-md) transition-all cursor-pointer p-0 gap-0"
+                  onClick={() => setSelectedListing(l)}
                 >
                   <CardContent className="p-5 flex flex-col gap-4">
                     <AppIcon tint={tint} glyph={glyph} />
@@ -102,11 +112,13 @@ export function MarketplacePage() {
                     </div>
                     <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground font-medium mt-auto">
                       <span>by {l.appCreatorHandle}</span>
-                      <>
-                        <span className="size-0.75 rounded-full bg-current opacity-50" />
-                        <span hidden={l.totalInstalls == 0}>{l.totalInstalls.toLocaleString()} installs</span>
-                      </>
-                      <Button variant='secondary' size='xs' onClick={() => handleInstallListing(l)}>
+                      {l.totalInstalls > 0 && (
+                        <>
+                          <span className="size-0.75 rounded-full bg-current opacity-50" />
+                          <span>{l.totalInstalls.toLocaleString()} installs</span>
+                        </>
+                      )}
+                      <Button variant='secondary' size='xs' className="ml-auto" onClick={e => { e.stopPropagation(); handleInstallListing(l) }}>
                         Install
                       </Button>
                     </div>
@@ -118,6 +130,12 @@ export function MarketplacePage() {
         )}
       </main>
 
+      <AppPreviewDialog
+        listing={selectedListing}
+        onClose={() => setSelectedListing(null)}
+        onInstall={handleInstallListing}
+        installing={installing}
+      />
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </div>
   )

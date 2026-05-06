@@ -4,7 +4,7 @@ a marketplace for user created app
 
 ## second pass
 
-1. app builder with file access and install npm modules
+1. ~~app builder with file access and install npm modules~~
 2. updates to the app with database change
 3. delete draft
 4. install created apps from dashboard
