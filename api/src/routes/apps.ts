@@ -414,9 +414,8 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
       {
         name: 'esm-sh',
         setup(b) {
-          // Resolve bare npm specifiers (not already external, not virtual files) to esm.sh
+          // Resolve bare npm specifiers (including those imported from virtual files) to esm.sh
           b.onResolve({ filter: /^[^./]/ }, args => {
-            if (args.namespace === 'virtual') return null
             return { path: `https://esm.sh/${args.path}`, namespace: 'esm-sh' }
           })
           // Resolve relative imports within esm.sh modules
