@@ -5,16 +5,17 @@ a marketplace for user created app
 ## second pass
 
 1. ~~app builder with file access and install npm modules~~
-2. updates to the app with database change
-3. delete draft
-4. install created apps from dashboard
-5. show app preview (render without passing ai or db) in marketplace
+2. optimize the new phase build system
+3. updates to the app with database change
+4. delete draft
+5. install created apps from dashboard
 6. submit updates to marketplace
 7. request_ai_access
 8. marketplace
    1. show grid of apps
    2. search apps
-9. official apps
+   3. capture screen shot from the app programaticcly
+9.  official apps
 
 ## infra
 

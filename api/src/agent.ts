@@ -32,8 +32,17 @@ export function markLastTurnCacheable(messages: Anthropic.MessageParam[]): Anthr
     last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }]
   } else if (Array.isArray(last.content) && last.content.length > 0) {
     const blocks = [...last.content]
-    blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: { type: 'ephemeral' } } as typeof blocks[0]
-    last.content = blocks
+    // Thinking blocks cannot have cache_control — find the last non-thinking block
+    let idx = blocks.length - 1
+    while (idx >= 0) {
+      const t = (blocks[idx] as Record<string, unknown>).type
+      if (t !== 'thinking' && t !== 'redacted_thinking') break
+      idx--
+    }
+    if (idx >= 0) {
+      blocks[idx] = { ...blocks[idx], cache_control: { type: 'ephemeral' } } as typeof blocks[0]
+      last.content = blocks
+    }
   }
   result[result.length - 1] = last
   return result
@@ -128,7 +137,7 @@ export async function runAgentLoop(params: {
     }
 
     const finalMessage = await stream.finalMessage()
-    console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size} usage=${JSON.stringify(finalMessage.usage)}`)
+    console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size}`)
     await onUsage?.(finalMessage.usage, model)
 
     if (finalMessage.stop_reason === 'max_tokens') {
@@ -149,10 +158,10 @@ export async function runAgentLoop(params: {
           onToolCall?.(block.name, input, result)
           result = await toolDef.handler(input)
         } else {
-          result = { error: `Unknown tool: ${block.name}` }
+          result = { error: `Unknown tool: ${block.name}, availble tools are ${sdkTools.map((t) => t.name + ' ,')}` }
         }
 
-        console.log(`[agent]   executed local tool: ${block.name} → ${JSON.stringify(result).slice(0, 80)}`)
+        console.log(`[agent]   executed local tool: ${block.name}`)
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,

@@ -17,6 +17,8 @@ export type ChatMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; thinking?: string; streaming: boolean }
   | { role: 'question'; questionId: string; question: string; suggestions: string[]; answered: boolean }
+  | { role: 'step'; label: string }
+  | { role: 'phase'; name: string; status: 'building' | 'done' }
 
 function toolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
@@ -32,6 +34,8 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
     case 'setup_database': return 'Setting up database'
     case 'set_app_metadata': return 'Naming the app'
     case 'ask_user': return 'Preparing question'
+    case 'set_build_stages': return 'Defining stages'
+    case 'set_build_phases': return 'Defining build phases'
     default: return 'Working…'
   }
 }
@@ -120,6 +124,8 @@ export function CreatePageInner({
                 ...last,
                 thinking: (last.thinking ?? '') + (data as { text: string }).text,
               }
+            } else {
+              next.push({ role: 'assistant', content: '', streaming: true, thinking: (data as { text: string }).text })
             }
             return next
           })
@@ -132,6 +138,8 @@ export function CreatePageInner({
                 ...last,
                 content: last.content + (data as { text: string }).text,
               }
+            } else {
+              next.push({ role: 'assistant', content: (data as { text: string }).text, streaming: true })
             }
             return next
           })
@@ -166,6 +174,38 @@ export function CreatePageInner({
               { role: 'question', questionId, question, suggestions: suggestions ?? [], answered: false },
             ]
           })
+        } else if (event === 'step_start') {
+          const { label } = data as { step: number; label: string }
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === 'assistant' && last.streaming && !last.content) {
+              next.pop()
+            } else if (last?.role === 'assistant' && last.streaming) {
+              next[next.length - 1] = { ...last, streaming: false }
+            }
+            return [...next, { role: 'step', label }]
+          })
+        } else if (event === 'phase_start') {
+          const { name } = data as { name: string; index: number; total: number }
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === 'assistant' && !last.content && !last.thinking) {
+              next.pop()
+            } else if (last?.role === 'assistant' && last.streaming) {
+              next[next.length - 1] = { ...last, streaming: false }
+            }
+            return [...next, { role: 'phase', name, status: 'building' }]
+          })
+        } else if (event === 'phase_complete') {
+          const { name } = data as { name: string; index: number }
+          setMessages(prev =>
+            prev.map(m => m.role === 'phase' && m.name === name && m.status === 'building'
+              ? { ...m, status: 'done' as const }
+              : m
+            )
+          )
         } else if (event === 'error') {
           setMessages(prev => {
             const next = [...prev]
@@ -176,6 +216,15 @@ export function CreatePageInner({
                 content: (data as { message: string }).message,
                 streaming: false,
               }
+            }
+            return next
+          })
+        } else if (event === 'done') {
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === 'assistant' && last.streaming) {
+              next[next.length - 1] = { ...last, streaming: false }
             }
             return next
           })
@@ -404,6 +453,36 @@ export function CreatePageInner({
                         </div>
                       )}
                     </div>
+                  </div>
+                )
+              }
+              if (m.role === 'step') {
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-wide px-1">{m.label}</span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                )
+              }
+              if (m.role === 'phase') {
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1.5 text-[11.5px] font-semibold px-2.5 py-1 rounded-full border',
+                        m.status === 'building'
+                          ? 'bg-[oklch(0.78_0.16_80/0.1)] border-[oklch(0.78_0.16_80/0.3)] text-[oklch(0.55_0.1_80)]'
+                          : 'bg-[oklch(0.7_0.15_145/0.1)] border-[oklch(0.7_0.15_145/0.3)] text-[oklch(0.45_0.1_145)]'
+                      )}
+                    >
+                      {m.status === 'building' ? (
+                        <span className="size-1.5 rounded-full bg-current animate-pulse" />
+                      ) : (
+                        <span className="text-[10px]">✓</span>
+                      )}
+                      {m.name}
+                    </span>
                   </div>
                 )
               }

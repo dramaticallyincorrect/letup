@@ -15,8 +15,12 @@ import { createShadcnMcpTools } from '../shadcnMcp'
 import { Fastify } from '../fastify_type'
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
+const CLARIFY_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-clarify.md'), 'utf8'))
+const BREAKDOWN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-breakdown.md'), 'utf8'))
 const PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
 const BUILD_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
+const PHASE_CHECK_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-phase-check.md'), 'utf8'))
+const REVIEW_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-review.md'), 'utf8'))
 
 // Deferred promises waiting for user answers, keyed by question ID
 const pendingQuestions = new Map<string, (answer: string) => void>()
@@ -439,6 +443,13 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
 
 // Removes cache_control from every content block so it doesn't accumulate in DB
 // across refinements (each refinement re-applies it transiently via markLastTurnCacheable).
+// Strip old cache_control from all messages then mark only the last turn.
+// Prevents accumulating more than 1 message-level cache block across chained loops
+// (Anthropic API allows at most 4 total across system + tools + messages).
+function freshCacheable(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  return markLastTurnCacheable(stripCacheControl(messages))
+}
+
 function stripCacheControl(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
   return messages.map(msg => {
     if (typeof msg.content === 'string') return msg
@@ -576,11 +587,11 @@ function buildApp(fastify: Fastify) {
     const messages: Anthropic.MessageParam[] = [...cachedHistory, { role: 'user', content: userMessage }]
 
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
+      const cssCode = virtualFiles.get('styles.css') ?? null
+      const sourceFilesArray = [...virtualFiles.entries()].map(([path, content]) => ({ path, content }))
       try {
         const compiled = await compileVirtualFiles(virtualFiles)
         agentState.compiledCode = compiled
-        const cssCode = virtualFiles.get('styles.css') ?? null
-        const sourceFilesArray = [...virtualFiles.entries()].map(([path, content]) => ({ path, content }))
         await fastify.db
           .insert(appVersions)
           .values({ appId, versionNumber: targetVersionNumber, compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, isDraft: true })
@@ -588,9 +599,16 @@ function buildApp(fastify: Fastify) {
             target: [appVersions.appId, appVersions.versionNumber],
             set: { compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, isDraft: true },
           })
-
         return { success: true }
       } catch (err) {
+        // Compilation failed — still persist source files so "continue" can pick them up
+        await fastify.db
+          .insert(appVersions)
+          .values({ appId, versionNumber: targetVersionNumber, cssCode, sourceFiles: sourceFilesArray, isDraft: true })
+          .onConflictDoUpdate({
+            target: [appVersions.appId, appVersions.versionNumber],
+            set: { cssCode, sourceFiles: sourceFilesArray, isDraft: true },
+          })
         return { error: err instanceof Error ? err.message : 'Compile failed' }
       }
     }
@@ -662,154 +680,257 @@ function buildApp(fastify: Fastify) {
     }
 
     try {
-      let planMessages: Anthropic.MessageParam[] = []
-
-      if (!isRefinement) {
-
-        planMessages = await runAgentLoop({
-          messages: [{ role: 'user', content: userMessage }],
-          tools: [askUserTool],
-          system: PLAN_SYSTEM,
-          maxTokens: 2048 * 4,
-          thinking: { budget_tokens: 1024 * 3 },
-          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onThinking: (delta) => sendEvent('thinking', { text: delta }),
-          onText: (delta) => sendEvent('text', { text: delta }),
-          onToolCall: (name, input, result) => sendEvent('tool_call', { name, input, result }),
-          onUsage: async (usage, model) => {
-            const mu = tokensToMicroUnits(usage, model)
-            await checkAndDeductCredits(fastify.db, userId, mu)
-            await logUsage(fastify.db, userId, 'build', model, usage, mu)
-          },
-        })
-
-        console.log('plan messages are', planMessages)
-
+      async function saveProgress(msgs: Anthropic.MessageParam[]) {
+        await fastify.db
+          .update(apps)
+          .set({ conversationHistory: stripCacheControl(msgs) as unknown[], updatedAt: new Date() })
+          .where(eq(apps.id, appId))
       }
 
-      const buildMessages: Anthropic.MessageParam[] = isRefinement
-        ? messages
-        : planMessages.length > 0
-          ? [...markLastTurnCacheable(planMessages), { role: 'user', content: 'Now execute this plan and build the app.' }]
-          : [{ role: 'user', content: userMessage }]
+      const sharedAgentParams = {
+        ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+        onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
+        onText: (delta: string) => sendEvent('text', { text: delta }),
+        onToolCall: (name: string, input: unknown, result: unknown) => sendEvent('tool_call', { name, input, result }),
+        onUsage: async (usage: Anthropic.Usage, model: string) => {
+          const mu = tokensToMicroUnits(usage, model)
+          await checkAndDeductCredits(fastify.db, userId, mu)
+          await logUsage(fastify.db, userId, 'build', model, usage, mu)
+        },
+      }
 
-      let finalMessages: Anthropic.MessageParam[] = []
-      const shadcnPass2 = await createShadcnMcpTools()
+      const setupDatabaseTool = {
+        name: 'setup_database',
+        description: 'Initialize the app database schema. Run CREATE TABLE IF NOT EXISTS statements and optional seed data. Call this once before writing any code that uses the db module.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            sql: { type: 'string', description: 'One or more SQL statements (CREATE TABLE, INSERT seed data, etc.)' },
+          },
+          required: ['sql'],
+        },
+        handler: async (input: Record<string, unknown>) => {
+          const schemaSQL = input.sql as string
+          await fastify.db
+            .insert(appVersions)
+            .values({ appId, versionNumber: targetVersionNumber, dbSchema: schemaSQL, isDraft: true })
+            .onConflictDoUpdate({
+              target: [appVersions.appId, appVersions.versionNumber],
+              set: { dbSchema: schemaSQL, isDraft: true },
+            })
+          await fastify.db.update(apps).set({ updatedAt: new Date() }).where(eq(apps.id, appId))
+          const draft = openDraftDb(appId)
+          try { draft.exec(schemaSQL) } finally { draft.close() }
+          return { success: true }
+        },
+      }
+
+      const setAppMetadataTool = {
+        name: 'set_app_metadata',
+        description: 'Set the display name and one-sentence description for the app.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            name: { type: 'string' },
+            description: { type: 'string' },
+          },
+          required: ['name', 'description'],
+        },
+        handler: async (input: Record<string, unknown>) => {
+          agentState.name = input.name as string
+          agentState.description = input.description as string
+          await fastify.db
+            .update(apps)
+            .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
+            .where(eq(apps.id, appId))
+          return { success: true }
+        },
+      }
+
+      const shadcn = await createShadcnMcpTools()
+      let allMessages: Anthropic.MessageParam[] = []
+
       try {
         const buildTools = [
-          ...shadcnPass2.tools,
-          {
-            name: 'setup_database',
-            description: 'Initialize the app database schema. Run CREATE TABLE IF NOT EXISTS statements and optional seed data. Call this once before writing any code that uses the db module.',
-            input_schema: {
-              type: 'object' as const,
-              properties: {
-                sql: { type: 'string', description: 'One or more SQL statements (CREATE TABLE, INSERT seed data, etc.)' },
-              },
-              required: ['sql'],
-            },
-            handler: async (input: Record<string, unknown>) => {
-              const schemaSQL = input.sql as string
-              await fastify.db
-                .insert(appVersions)
-                .values({ appId, versionNumber: targetVersionNumber, dbSchema: schemaSQL, isDraft: true })
-                .onConflictDoUpdate({
-                  target: [appVersions.appId, appVersions.versionNumber],
-                  set: { dbSchema: schemaSQL, isDraft: true },
-                })
-              await fastify.db
-                .update(apps)
-                .set({ updatedAt: new Date() })
-                .where(eq(apps.id, appId))
-              const draft = openDraftDb(appId)
-              try { draft.exec(schemaSQL) } finally { draft.close() }
-              return { success: true }
-            },
-          },
-          {
-            name: 'set_app_metadata',
-            description: 'Set the display name and one-sentence description for the app.',
-            input_schema: {
-              type: 'object' as const,
-              properties: {
-                name: { type: 'string' },
-                description: { type: 'string' },
-              },
-              required: ['name', 'description'],
-            },
-            handler: async (input: Record<string, unknown>) => {
-              agentState.name = input.name as string
-              agentState.description = input.description as string
-              await fastify.db
-                .update(apps)
-                .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
-                .where(eq(apps.id, appId))
-              return { success: true }
-            },
-          },
+          ...shadcn.tools,
+          setupDatabaseTool,
+          setAppMetadataTool,
           writeFileTool,
           readFileTool,
           listFilesTool,
-          askUserTool
+          askUserTool,
         ]
 
         const buildLoopParams = {
           tools: buildTools,
           system: BUILD_SYSTEM,
-          maxTokens: 16000,
+          maxTokens: 20000,
           thinking: { budget_tokens: 8000 },
-          ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
-          onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
-          onText: (delta: string) => sendEvent('text', { text: delta }),
-          onToolCall: (name: string, input: unknown, result: unknown) => sendEvent('tool_call', { name, input, result }),
-          onUsage: async (usage: Anthropic.Usage, model: string) => {
-            const mu = tokensToMicroUnits(usage, model)
-            await checkAndDeductCredits(fastify.db, userId, mu)
-            await logUsage(fastify.db, userId, 'build', model, usage, mu)
-          },
+          ...sharedAgentParams,
         }
 
-        finalMessages = await runAgentLoop({
-          messages: buildMessages,
-          ...buildLoopParams,
-        })
-
-        const MAX_COMPILE_RETRIES = 2
-        for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
-          if (virtualFiles.size === 0) break
-          const compileResult = await compileAndPersist()
-          if (!('error' in compileResult)) break
-          if (attempt === MAX_COMPILE_RETRIES) {
-            sendEvent('error', { message: `Compile error: ${compileResult.error}` })
-            break
+        async function runBuildWithRetry(msgs: Anthropic.MessageParam[]): Promise<Anthropic.MessageParam[]> {
+          let result = await runAgentLoop({ messages: msgs, ...buildLoopParams })
+          const MAX_COMPILE_RETRIES = 2
+          for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
+            if (virtualFiles.size === 0) break
+            const compileResult = await compileAndPersist()
+            if (!('error' in compileResult)) break
+            if (attempt === MAX_COMPILE_RETRIES) {
+              sendEvent('error', { message: `Compile error: ${compileResult.error}` })
+              break
+            }
+            const retryMsgs = freshCacheable(result)
+            retryMsgs.push({ role: 'user', content: `Compilation failed:\n\n${compileResult.error}\n\nPlease fix the issue.` })
+            result = await runAgentLoop({ messages: retryMsgs, ...buildLoopParams })
           }
-          const retryMessages = markLastTurnCacheable(finalMessages)
-          retryMessages.push({ role: 'user', content: `Compilation failed with this error:\n\n${compileResult.error}\n\nPlease fix the issue.` })
-          finalMessages = await runAgentLoop({ messages: retryMessages, ...buildLoopParams })
+          return result
+        }
+
+        if (isRefinement) {
+          // Refinement: go straight to build
+          allMessages = await runBuildWithRetry(messages)
+          if (virtualFiles.size > 0) {
+            const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
+            sendEvent('widget', updated)
+          }
+        } else {
+          // New build: 9-step workflow
+
+          // Step 1: Clarify
+          sendEvent('step_start', { step: 1, label: 'Clarifying requirements' })
+          const clarifyMessages = await runAgentLoop({
+            messages: [{ role: 'user', content: userMessage }],
+            tools: [askUserTool],
+            system: CLARIFY_SYSTEM,
+            maxTokens: 2048 * 2,
+            thinking: { budget_tokens: 1024 },
+            ...sharedAgentParams,
+          })
+
+          // Step 2: Break down into stages
+          sendEvent('step_start', { step: 2, label: 'defining stages' })
+          const buildStages: Array<{ name: string; description: string }> = []
+          const setBuildStagesTool = {
+            name: 'set_build_stages',
+            description: 'Lock in the high-level build stages for this app.',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                stages: {
+                  type: 'array',
+                  items: {
+                    type: 'object' as const,
+                    properties: {
+                      name: { type: 'string' },
+                      description: { type: 'string' },
+                    },
+                    required: ['name', 'description'],
+                  },
+                },
+              },
+              required: ['stages'],
+            },
+            handler: async (input: Record<string, unknown>) => {
+              const stages = input.stages as Array<{ name: string; description: string }>
+              buildStages.push(...stages)
+              sendEvent('stages_defined', { stages: stages.map(s => s.name) })
+              return { success: true, stageCount: stages.length }
+            },
+          }
+          const breakdownMessages = await runAgentLoop({
+            messages: [
+              ...freshCacheable(clarifyMessages),
+              { role: 'user', content: 'Now break this app down into high-level build stages.' },
+            ],
+            tools: [askUserTool, setBuildStagesTool],
+            system: BREAKDOWN_SYSTEM,
+            maxTokens: 2048 * 2,
+            thinking: { budget_tokens: 1024 },
+            ...sharedAgentParams,
+          })
+          console.log('[build] stages defined:', buildStages.map(s => s.name))
+          await saveProgress(breakdownMessages)
+
+          // Step 3+4: Design plan + define build phases
+          sendEvent('step_start', { step: 3, label: 'Creating design plan' })
+          const buildPhases = buildStages
+          
+          const planMessages = await runAgentLoop({
+            messages: [
+              ...freshCacheable(breakdownMessages),
+              { role: 'user', content: 'Now create the detailed design plan' },
+            ],
+            system: PLAN_SYSTEM,
+            maxTokens: 2048 * 4,
+            thinking: { budget_tokens: 1024 * 3 },
+            ...sharedAgentParams,
+          })
+          if (buildPhases.length === 0) {
+            buildPhases.push({ name: 'Full build', description: 'Build the complete app.' })
+          }
+          
+          await saveProgress(planMessages)
+
+          // Steps 5–N: Phase build loop
+          sendEvent('step_start', { step: 4, label: `Building ${buildPhases.length} stage${buildPhases.length !== 1 ? 's' : ''}` })
+          let phaseMessages = freshCacheable(planMessages)
+
+          for (let i = 0; i < buildPhases.length; i++) {
+            const phase = buildPhases[i]
+            sendEvent('phase_start', { name: phase.name, index: i, total: buildPhases.length })
+
+            const phaseResult = await runBuildWithRetry([
+              ...phaseMessages,
+              { role: 'user', content: `Build Stage ${i + 1} of ${buildPhases.length}: ${phase.name}\n\n${phase.description}` },
+            ])
+
+            if (virtualFiles.size > 0) {
+              const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
+              sendEvent('widget', updated)
+            }
+
+            // Phase self-check
+            const checkMessages = await runAgentLoop({
+              messages: [
+                ...freshCacheable(phaseResult),
+                { role: 'user', content: `Review what was just built in phase "${phase.name}". Check it against the design plan and flag any issues before continuing.` },
+              ],
+              tools: [askUserTool],
+              system: PHASE_CHECK_SYSTEM,
+              maxTokens: 2048 * 2,
+              thinking: { budget_tokens: 1024 },
+              ...sharedAgentParams,
+            })
+
+            sendEvent('phase_complete', { name: phase.name, index: i })
+            await saveProgress(checkMessages)
+            phaseMessages = freshCacheable(checkMessages)
+          }
+
+          // Step 9: Final review
+          sendEvent('step_start', { step: 9, label: 'Reviewing' })
+          allMessages = await runAgentLoop({
+            messages: [
+              ...phaseMessages,
+              { role: 'user', content: 'Give a brief overview of what was built, how it maps to the original request, and suggest what to try next.' },
+            ],
+            tools: [],
+            system: REVIEW_SYSTEM,
+            maxTokens: 2048 * 2,
+            thinking: { budget_tokens: 1024 },
+            ...sharedAgentParams,
+          })
+          await saveProgress(allMessages)
         }
       } finally {
-        await shadcnPass2.close()
+        await shadcn.close()
       }
 
-      // For new builds: save full plan messages (including thinking blocks) + build trigger + build turns.
-      // Thinking blocks must be preserved so the API can replay them correctly in future refinements.
-      // For refinements: finalMessages already has the correct structure.
-      const historyToSave: Anthropic.MessageParam[] = isRefinement
-        ? finalMessages
-        : planMessages.length > 0
-          ? [
-            ...planMessages,
-            { role: 'user' as const, content: 'Now execute this plan and build the app.' },
-            ...finalMessages.slice(buildMessages.length),
-          ]
-          : [
-            { role: 'user', content: userMessage },
-            ...finalMessages.slice(buildMessages.length),
-          ]
-      await fastify.db
-        .update(apps)
-        .set({ conversationHistory: stripCacheControl(historyToSave) as unknown[], updatedAt: new Date() })
-        .where(eq(apps.id, appId))
+      // Refinements save here; new builds already saved incrementally via saveProgress()
+      if (isRefinement) {
+        await saveProgress(allMessages)
+      }
 
       const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
       sendEvent('widget', updated)
