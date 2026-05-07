@@ -40,6 +40,67 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
   }
 }
 
+function ChatComposer({
+  isSending,
+  currentActivity,
+  hasMessages,
+  onSend,
+}: {
+  isSending: boolean
+  currentActivity: string | null
+  hasMessages: boolean
+  onSend: (text: string) => void
+}) {
+  const [inputValue, setInputValue] = useState('')
+
+  function submit() {
+    if (!inputValue.trim() || isSending) return
+    onSend(inputValue)
+    setInputValue('')
+  }
+
+  return (
+    <div className="px-5 py-4 pb-5 border-border bg-card shrink-0">
+      {currentActivity && (
+        <div
+          key={currentActivity}
+          className="mb-2.5 flex items-center gap-2 text-[12px] text-muted-foreground animate-activity-in"
+        >
+          <span className="size-1.5 rounded-full bg-accent shrink-0 animate-pulse" />
+          <span className="truncate">{currentActivity}</span>
+        </div>
+      )}
+      <div className="bg-card border-[1.5px] border-input rounded-2xl px-4 pt-3.5 pb-3">
+        <Textarea
+          rows={1}
+          placeholder={hasMessages ? 'Ask Claude to change something…' : 'Describe your app…'}
+          value={inputValue}
+          onChange={e => setInputValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && e.metaKey) {
+              e.preventDefault()
+              submit()
+            }
+          }}
+          disabled={isSending}
+          className="min-h-7 max-h-40 border-0 resize-none font-sans border-none focus:border-0 focus-visible:ring-0"
+        />
+        <div className="flex items-center gap-1.5 mt-2">
+          <div className="flex-1"></div>
+          <Button
+            size='sm'
+            disabled={!inputValue.trim() || isSending}
+            onClick={submit}
+          >
+            <SendHorizonal />
+            Send
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function CreatePage() {
   return <CreatePageInner />
 }
@@ -67,7 +128,6 @@ export function CreatePageInner({
   const [cssCode, setCssCode] = useState<string | null>(initialCssCode)
   const [isSending, setIsSending] = useState(false)
   const [currentActivity, setCurrentActivity] = useState<string | null>(null)
-  const [inputValue, setInputValue] = useState('')
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
   const [initError, setInitError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -83,11 +143,10 @@ export function CreatePageInner({
   const currentTint = widgetId ? getAppTint(widgetId) : 'graphite'
   const currentGlyph = getAppGlyph(appName)
 
-  async function handleSend(text?: string) {
-    const msg = (text ?? inputValue).trim()
+  async function handleSend(text: string) {
+    const msg = text.trim()
     if (!msg || isSending) return
 
-    setInputValue('')
     setIsSending(true)
 
     let activeWidgetId = widgetId
@@ -493,48 +552,12 @@ export function CreatePageInner({
           </div>
 
           {/* Chat composer */}
-          <div className="px-5 py-4 pb-5 border-border bg-card shrink-0">
-            {currentActivity && (
-              <div
-                key={currentActivity}
-                className="mb-2.5 flex items-center gap-2 text-[12px] text-muted-foreground animate-activity-in"
-              >
-                <span className="size-1.5 rounded-full bg-accent shrink-0 animate-pulse" />
-                <span className="truncate">{currentActivity}</span>
-              </div>
-            )}
-            <div className="bg-card border-[1.5px] border-input rounded-2xl px-4 pt-3.5 pb-3">
-              <Textarea
-                rows={1}
-                placeholder={
-                  messages.length === 0
-                    ? 'Describe your app…'
-                    : 'Ask Claude to change something…'
-                }
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && e.metaKey) {
-                    e.preventDefault()
-                    handleSend()
-                  }
-                }}
-                disabled={isSending}
-                className="min-h-7 max-h-40 border-0 resize-none font-sans border-none focus:border-0 focus-visible:ring-0"
-              />
-              <div className="flex items-center gap-1.5 mt-2">
-                <div className="flex-1"></div>
-                <Button
-                  size='sm'
-                  disabled={!inputValue.trim() || isSending}
-                  onClick={() => handleSend()}
-                >
-                  <SendHorizonal />
-                  Send
-                </Button>
-              </div>
-            </div>
-          </div>
+          <ChatComposer
+            isSending={isSending}
+            currentActivity={currentActivity}
+            hasMessages={messages.length > 0}
+            onSend={handleSend}
+          />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
