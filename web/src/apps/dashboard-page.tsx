@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import * as client from '@repo/data'
 import { MARKETPLACE_CATEGORIES } from '@repo/data'
 import { cn } from '@/lib/utils'
@@ -17,6 +18,7 @@ type SubmitModalState = {
   existingDescription?: string
   existingCategory?: string
 }
+
 
 export function DashboardPage() {
   const queryClient = useQueryClient()
@@ -43,8 +45,8 @@ export function DashboardPage() {
     submissions.map(({ appId, submission }) => [appId, submission]),
   )
 
-  function openSubmitModal(app: client.AppSummary) {
-    if (app.status == 'draft') return
+  function openSubmitModal(app: client.CreatedAppSummary) {
+    if (app.isDraft !== false) return
     const sub = submissionByApp[app.id]
     setSubmitModal({
       appId: app.id,
@@ -100,7 +102,7 @@ export function DashboardPage() {
                   const glyph = getAppGlyph(app.name)
                   const isApproved = submission?.status === 'approved'
                   const isPending = submission?.status === 'pending'
-                  const canSubmit = app.status === 'published' && !isApproved
+                  const canSubmit = app.isDraft === false && !isApproved
 
                   return (
                     <tr
@@ -147,18 +149,25 @@ export function DashboardPage() {
                         )}
                       </td>
                       <td className="px-5 py-4 text-right">
-                        {isApproved ? (
-                          <span className="text-[12px] text-muted-foreground">In marketplace</span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant={canSubmit ? 'default' : 'ghost'}
-                            disabled={!canSubmit}
-                            onClick={() => openSubmitModal(app)}
-                          >
-                            {app.status == 'draft' ? 'Draft cannot be published' : isPending ? 'Resubmit' : 'Submit to marketplace'}
+                        <div className="flex items-center justify-end gap-2">
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link to="/apps/$appId/usage" params={{ appId: app.id }}>
+                              Usage
+                            </Link>
                           </Button>
-                        )}
+                          {isApproved ? (
+                            <span className="text-[12px] text-muted-foreground">In marketplace</span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant={canSubmit ? 'default' : 'ghost'}
+                              disabled={!canSubmit}
+                              onClick={() => openSubmitModal(app)}
+                            >
+                              {app.isDraft !== false ? 'Draft — publish first' : isPending ? 'Resubmit' : 'Submit to marketplace'}
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -184,6 +193,7 @@ export function DashboardPage() {
     </div>
   )
 }
+
 
 function SubmitModal({
   appId,

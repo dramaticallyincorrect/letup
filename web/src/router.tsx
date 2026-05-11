@@ -11,6 +11,7 @@ import { CreatePage } from './apps/create-page'
 import { EditPage } from './apps/edit-page'
 import { AppViewPage } from './apps/app-view'
 import { DashboardPage } from './apps/dashboard-page'
+import { UsagePage } from './apps/usage-page'
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -57,6 +58,12 @@ const dashboardRoute = createRoute({
   component: DashboardPage,
 })
 
+const usageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apps/$appId/usage',
+  component: UsagePage,
+})
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   marketplaceRoute,
@@ -64,6 +71,7 @@ const routeTree = rootRoute.addChildren([
   appViewRoute,
   editRoute,
   dashboardRoute,
+  usageRoute,
 ])
 
 export const router = createRouter({

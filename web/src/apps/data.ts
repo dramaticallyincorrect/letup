@@ -24,7 +24,7 @@ export type AppCard = {
   tint: AppTint
   description: string
   category: string
-  status: string
+  latestVersionNumber: number
 }
 
 const TINT_LIST: AppTint[] = ['coral', 'sage', 'indigo', 'amber', 'plum', 'graphite', 'sky', 'mint']
@@ -72,7 +72,7 @@ export function widgetToAppCard(w: AppSummary): AppCard {
     tint: getAppTint(w.id),
     description: w.description || 'A mini app built with Claude.',
     category: 'Productivity',
-    status: w.status,
+    latestVersionNumber: w.latestVersionNumber,
   }
 }
 

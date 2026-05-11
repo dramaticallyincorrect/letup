@@ -11,18 +11,17 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type AppStatus = 'draft' | 'published'
-
 export type AppSummary = {
   id: string
   creatorId: string | null
   name: string
   description: string
-  status: AppStatus
   latestVersionNumber: number
   createdAt: string
   updatedAt: string
 }
+
+export type CreatedAppSummary = AppSummary & { isDraft: boolean | null }
 
 export type App = AppSummary & {
   versionNumber: number | null
@@ -53,7 +52,6 @@ export type UserAppInstall = {
   appId: string
   appName: string
   appDescription: string
-  appStatus: AppStatus
   latestVersionNumber: number
   appCreatedAt: string
   appUpdatedAt: string
@@ -66,7 +64,7 @@ export async function getApps(): Promise<AppSummary[]> {
   return res.json()
 }
 
-export async function getCreatedApps(): Promise<AppSummary[]> {
+export async function getCreatedApps(): Promise<CreatedAppSummary[]> {
   const res = await apiFetch('/apps/created')
   return res.json()
 }
@@ -115,6 +113,10 @@ export async function uninstallApp(appId: string): Promise<void> {
   await apiFetch(`/apps/${appId}`, { method: 'DELETE' })
 }
 
+export async function deleteApp(appId: string): Promise<void> {
+  await apiFetch(`/apps/${appId}/draft`, { method: 'DELETE' })
+}
+
 export function buildApp(appId: string, userMessage: string): Promise<Response> {
   return fetch(`${baseUrl}/apps/build`, {
     method: 'POST',
@@ -129,6 +131,40 @@ export async function answerAppQuestion(questionId: string, answer: string): Pro
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ questionId, answer }),
   })
+}
+
+export type AppBuildUsage = {
+  buildSessionId: string
+  userMessage: string | null
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationTokens: number
+  cacheReadTokens: number
+  microUnitsUsed: string
+  createdAt: string
+  durationSeconds: number
+}
+
+export type AppVersionUsage = {
+  appVersionId: string
+  versionNumber: number
+  isDraft: boolean
+  builds: AppBuildUsage[]
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCacheCreationTokens: number
+  totalCacheReadTokens: number
+  totalMicroUnitsUsed: string
+}
+
+export function microUnitsToUsd(microUnits: string | number | bigint): string {
+  return `$${(Number(microUnits) / 12_500_000).toFixed(4)}`
+}
+
+export async function getAppUsage(appId: string): Promise<AppVersionUsage[]> {
+  const res = await apiFetch(`/apps/${appId}/usage`)
+  return res.json()
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────

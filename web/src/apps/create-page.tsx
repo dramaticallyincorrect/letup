@@ -12,6 +12,7 @@ import { getAppGlyph, getAppTint } from './data'
 import { SendHorizonal } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { ErrorBoundary } from 'react-error-boundary'
 
 export type ChatMessage =
   | { role: 'user'; content: string }
@@ -22,9 +23,9 @@ export type ChatMessage =
 
 function toolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
-    case 'write_file': {
+    case 'str_replace': {
       const filename = ((input.path as string) ?? '').split('/').pop() || 'file'
-      return `Writing ${filename}`
+      return `Editing ${filename}`
     }
     case 'read_file': {
       const filename = ((input.path as string) ?? '').split('/').pop() || 'file'
@@ -134,7 +135,7 @@ export function CreatePageInner({
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    console.log('Messages updated:', messages)
   }, [messages])
 
   const status = isSending ? 'thinking' : compiledCode ? 'ready' : 'draft'
@@ -144,7 +145,7 @@ export function CreatePageInner({
   const currentGlyph = getAppGlyph(appName)
 
   async function handleSend(text: string) {
-    const msg = text.trim()
+    const msg = text.trimEnd().trimStart()
     if (!msg || isSending) return
 
     setIsSending(true)
@@ -582,7 +583,9 @@ export function CreatePageInner({
           ) : (
             <div className="flex-1 overflow-auto">
               <div className="w-full">
-                <AppPreview compiledCode={compiledCode} cssCode={cssCode} appId={widgetId ?? undefined} draft={true} />
+                <ErrorBoundary fallback={<div className="text-red">Something went wrong</div>}>
+                  <AppPreview compiledCode={compiledCode} cssCode={cssCode} appId={widgetId ?? undefined} draft={true} />
+                </ErrorBoundary>
               </div>
             </div>
           )}

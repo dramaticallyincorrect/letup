@@ -69,6 +69,10 @@ export async function logUsage(
   model: string,
   usage: Anthropic.Usage,
   microUnitsUsed: bigint,
+  appVersionId?: string,
+  userMessage?: string,
+  buildSessionId?: string,
+  durationSeconds?: number,
 ): Promise<void> {
   await db.insert(aiUsageLogs).values({
     userId,
@@ -79,5 +83,9 @@ export async function logUsage(
     cacheCreationTokens: (usage as any).cache_creation_input_tokens ?? 0,
     cacheReadTokens: (usage as any).cache_read_input_tokens ?? 0,
     microUnitsUsed,
+    appVersionId: appVersionId ?? null,
+    userMessage: userMessage ?? null,
+    buildSessionId: buildSessionId ?? null,
+    durationSeconds: durationSeconds ?? null,
   })
 }

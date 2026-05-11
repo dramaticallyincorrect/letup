@@ -107,13 +107,20 @@ function LibraryView({
   const [pendingDelete, setPendingDelete] = useState<AppCard | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  const isDraft = (pendingDelete?.latestVersionNumber ?? 0) === 0
+
   async function handleConfirmDelete() {
     if (!pendingDelete) return
     setIsDeleting(true)
     try {
-      await client.uninstallApp(pendingDelete.id)
+      if (pendingDelete.latestVersionNumber === 0) {
+        await client.deleteApp(pendingDelete.id)
+        onToast(`"${pendingDelete.name}" deleted`)
+      } else {
+        await client.uninstallApp(pendingDelete.id)
+        onToast(`"${pendingDelete.name}" uninstalled`)
+      }
       await queryClient.invalidateQueries({ queryKey: ['widgets'] })
-      onToast(`"${pendingDelete.name}" uninstalled`)
     } finally {
       setIsDeleting(false)
       setPendingDelete(null)
@@ -157,19 +164,25 @@ function LibraryView({
       <Modal
         open={!!pendingDelete}
         onClose={() => setPendingDelete(null)}
-        title={pendingDelete ? <>Uninstall "{pendingDelete.name}"?</> : null}
+        title={pendingDelete ? <>{isDraft ? 'Delete' : 'Uninstall'} "{pendingDelete.name}"?</> : null}
         footer={
           <>
             <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={isDeleting}>
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleConfirmDelete} disabled={isDeleting}>
-              {isDeleting ? 'Uninstalling…' : 'Uninstall'}
+              {isDeleting
+                ? isDraft ? 'Deleting…' : 'Uninstalling…'
+                : isDraft ? 'Delete' : 'Uninstall'}
             </Button>
           </>
         }
       >
-        <p className="m-0">This will remove the app from your library.</p>
+        <p className="m-0">
+          {isDraft
+            ? 'This will permanently delete the draft app.'
+            : 'This will remove the app from your library.'}
+        </p>
       </Modal>
     </>
   )
@@ -188,7 +201,7 @@ function AppCardTile({
     <Card className="group hover:-translate-y-0.5 hover:shadow-(--shadow-md) transition-all cursor-pointer relative overflow-hidden p-0 gap-0">
       <Link to="/apps/$appId" params={{ appId: app.id }} className="no-underline block">
         <CardContent className="p-5.5 flex flex-col gap-4">
-          {app.status === 'draft' && (
+          {app.latestVersionNumber === 0 && (
             <Badge
               variant="secondary"
               className="absolute top-4 left-4 text-[11px] font-semibold"
@@ -238,7 +251,7 @@ function AppCardTile({
                 onDeleteRequest(app)
               }}
             >
-              Uninstall
+              {app.latestVersionNumber === 0 ? 'Delete' : 'Uninstall'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

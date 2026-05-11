@@ -37,13 +37,21 @@ function submitApp(fastify: Fastify) {
       const userId = getCurrentUserId()
 
       const [app] = await fastify.db
-        .select({ id: apps.id, status: apps.status, creatorId: apps.creatorId })
+        .select({ id: apps.id, creatorId: apps.creatorId })
         .from(apps)
         .where(eq(apps.id, appId))
 
       if (!app) return reply.status(404).send({ error: 'App not found' })
       if (app.creatorId !== userId) return reply.status(403).send({ error: 'Forbidden' })
-      if (app.status !== 'published') return reply.status(400).send({ error: 'App must be published before submitting' })
+
+      const [latestVersion] = await fastify.db
+        .select({ isDraft: appVersions.isDraft })
+        .from(appVersions)
+        .where(eq(appVersions.appId, appId))
+        .orderBy(desc(appVersions.versionNumber))
+        .limit(1)
+
+      if (!latestVersion || latestVersion.isDraft) return reply.status(400).send({ error: 'App must be published before submitting' })
 
       const existing = await fastify.db
         .select()

@@ -2,28 +2,84 @@ import {
   type FastifyPluginAsync,
 } from 'fastify'
 import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { join, posix } from 'node:path'
-import { and, desc, eq, isNotNull, or } from 'drizzle-orm'
+import { compile } from '@tailwindcss/node'
+import { and, desc, eq, isNotNull, max, or, sql } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
-import { apps, appVersions, userAppInstalls } from '../db/schema'
+import { apps, appVersions, userAppInstalls, aiUsageLogs } from '../db/schema'
 import { openDb, openDraftDb, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
 import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from '../credits'
-import { createShadcnMcpTools } from '../shadcnMcp'
 import { Fastify } from '../fastify_type'
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
-const CLARIFY_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-clarify.md'), 'utf8'))
-const BREAKDOWN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-breakdown.md'), 'utf8'))
 const PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
 const BUILD_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
-const PHASE_CHECK_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-phase-check.md'), 'utf8'))
-const REVIEW_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-review.md'), 'utf8'))
 
 // Deferred promises waiting for user answers, keyed by question ID
 const pendingQuestions = new Map<string, (answer: string) => void>()
+
+// Rewrite registry-internal import paths to the virtual filesystem paths used at runtime.
+// The registry ships raw source where inter-component imports use @/registry/new-york-v4/…
+// but the shadcn CLI normally rewrites these on install. We do the same here.
+function rewriteRegistryImports(content: string): string {
+  return content
+    .replace(/@\/registry\/new-york-v4\/ui\//g, '@/components/ui/')
+    .replace(/@\/registry\/new-york-v4\/lib\//g, '@/lib/')
+    .replace(/@\/registry\/new-york-v4\/hooks\//g, '@/hooks/')
+}
+
+// Default shadcn components pre-loaded into every new virtual filesystem.
+// Fetched from the public registry once at startup and cached for the process lifetime.
+const SCAFFOLD_COMPONENTS = [
+  'utils',
+  'accordion', 'alert', 'alert-dialog', 'aspect-ratio', 'avatar',
+  'badge', 'breadcrumb', 'button',
+  'calendar', 'card', 'carousel', 'chart', 'checkbox', 'collapsible', 'command', 'context-menu',
+  'dialog', 'drawer', 'dropdown-menu',
+  'form',
+  'hover-card',
+  'input', 'input-otp',
+  'label',
+  'menubar',
+  'navigation-menu',
+  'pagination', 'popover', 'progress',
+  'radio-group', 'resizable',
+  'scroll-area', 'select', 'separator', 'sheet', 'sidebar', 'skeleton', 'slider', 'sonner', 'switch',
+  'table', 'tabs', 'textarea', 'toggle', 'toggle-group', 'tooltip',
+]
+
+let scaffoldCache: Promise<Map<string, string>> | null = null
+
+function loadScaffoldFiles(): Promise<Map<string, string>> {
+  if (!scaffoldCache) {
+    scaffoldCache = (async () => {
+      const files = new Map<string, string>()
+      await Promise.all(SCAFFOLD_COMPONENTS.map(async (name) => {
+        try {
+          const res = await fetch(`https://ui.shadcn.com/r/styles/new-york-v4/${name}.json`)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const data = await res.json() as { files?: Array<{ path?: string; type?: string; content: string }> }
+          for (const file of data.files ?? []) {
+            const basename = (file.path ?? `${name}.tsx`).split('/').pop()!
+            const folder = file.type === 'registry:lib' ? 'lib' : 'components/ui'
+            files.set(`${folder}/${basename}`, rewriteRegistryImports(file.content))
+          }
+        } catch (err) {
+          console.warn(`[scaffold] failed to load shadcn component "${name}":`, err)
+        }
+      }))
+      console.log(`[scaffold] loaded ${files.size} default component files`)
+      files.set('index.tsx', '')
+      files.set('styles.css', '')
+      return files
+    })()
+  }
+  return scaffoldCache
+}
 
 const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   listApps(fastify)
@@ -35,10 +91,12 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   patchApp(fastify)
   installApp(fastify)
   uninstallApp(fastify)
+  deleteDraftApp(fastify)
   buildApp(fastify)
   answerAppQuestion(fastify)
   queryAppDb(fastify)
   appManifest(fastify)
+  getAppUsage(fastify)
 }
 
 function sseHeaders(origin?: string) {
@@ -62,7 +120,6 @@ function listApps(fastify: Fastify) {
         creatorId: apps.creatorId,
         name: apps.name,
         description: apps.description,
-        status: apps.status,
         latestVersionNumber: apps.latestVersionNumber,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,
@@ -88,18 +145,30 @@ function listCreatedApps(fastify: Fastify) {
   fastify.get('/apps/created', {
     schema: { tags: ['apps'], summary: 'List apps created by the current user' },
   }, async (_request, reply) => {
+    const maxVersionSq = fastify.db
+      .select({ appId: appVersions.appId, maxVersion: max(appVersions.versionNumber).as('max_version') })
+      .from(appVersions)
+      .groupBy(appVersions.appId)
+      .as('max_version_sq')
+
+    const latestVersionAlias = appVersions
     const result = await fastify.db
       .select({
         id: apps.id,
         creatorId: apps.creatorId,
         name: apps.name,
         description: apps.description,
-        status: apps.status,
         latestVersionNumber: apps.latestVersionNumber,
+        isDraft: latestVersionAlias.isDraft,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,
       })
       .from(apps)
+      .leftJoin(maxVersionSq, eq(maxVersionSq.appId, apps.id))
+      .leftJoin(latestVersionAlias, and(
+        eq(latestVersionAlias.appId, apps.id),
+        eq(latestVersionAlias.versionNumber, maxVersionSq.maxVersion),
+      ))
       .where(eq(apps.creatorId, getCurrentUserId()))
       .orderBy(desc(apps.createdAt))
     return reply.send(result)
@@ -119,7 +188,6 @@ function appManifest(fastify: Fastify) {
         creatorId: apps.creatorId,
         name: apps.name,
         description: apps.description,
-        status: apps.status,
         latestVersionNumber: apps.latestVersionNumber,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,
@@ -316,7 +384,7 @@ function installApp(fastify: Fastify) {
 
     const [updated] = await fastify.db
       .update(apps)
-      .set({ status: 'published', latestVersionNumber: draftVersion.versionNumber, updatedAt: new Date() })
+      .set({ latestVersionNumber: draftVersion.versionNumber, updatedAt: new Date() })
       .where(eq(apps.id, appId))
       .returning()
 
@@ -347,6 +415,27 @@ function uninstallApp(fastify: Fastify) {
   })
 }
 
+function deleteDraftApp(fastify: Fastify) {
+  fastify.delete<{ Params: { appId: string } }>('/apps/:appId/draft', {
+    schema: { tags: ['apps'], summary: 'Permanently delete a draft app created by the current user' },
+  }, async (request, reply) => {
+    const { appId } = request.params
+    const userId = getCurrentUserId()
+
+    const [app] = await fastify.db
+      .select({ id: apps.id, latestVersionNumber: apps.latestVersionNumber, creatorId: apps.creatorId })
+      .from(apps)
+      .where(eq(apps.id, appId))
+
+    if (!app) return reply.code(404).send({ error: 'App not found' })
+    if (app.creatorId !== userId) return reply.code(403).send({ error: 'Forbidden' })
+
+    await fastify.db.delete(appVersions).where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
+
+    return reply.code(204).send()
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Virtual filesystem helpers
 // ---------------------------------------------------------------------------
@@ -371,6 +460,27 @@ function resolveVirtualPath(importerPath: string, importPath: string, files: Map
   return null
 }
 
+function extractTailwindCandidates(files: Map<string, string>): string[] {
+  const candidates = new Set<string>()
+  for (const [path, content] of files) {
+    if (!/\.(tsx?|jsx?)$/.test(path)) continue
+    for (const token of content.split(/[\s"'`{};,<>=+&|^~!()[\]]+/)) {
+      if (token.length > 1 && token.length < 100) candidates.add(token)
+    }
+  }
+  return [...candidates]
+}
+
+async function compileTailwindCss(files: Map<string, string>): Promise<string> {
+  const userCss = files.get('styles.css') ?? ''
+  const cssInput = `@import "tailwindcss";\n${userCss}`
+  const compiler = await compile(cssInput, {
+    base: join(__dirname, '../../..'),
+    onDependency: () => {},
+  })
+  return compiler.build(extractTailwindCandidates(files))
+}
+
 const esmShCache = new Map<string, string>()
 
 async function compileVirtualFiles(files: Map<string, string>): Promise<string> {
@@ -379,13 +489,10 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
     bundle: true,
     format: 'cjs',
     write: false,
-    jsx: 'transform',
-    jsxFactory: 'React.createElement',
-    jsxFragment: 'React.Fragment',
+    jsx: 'automatic',
     target: 'es2020',
     external: [
-      'react', 'framer-motion',
-      '@/components/ui/*', '@/lib/utils',
+      'react', 'react/jsx-runtime', 'framer-motion',
       'radix-ui', 'lucide-react',
       'class-variance-authority', 'tailwind-merge',
       'ai', 'db',
@@ -394,6 +501,18 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
       {
         name: 'virtual-fs',
         setup(b) {
+          // All modules provided by the req shim at runtime must be marked external
+          // before the esm-sh plugin intercepts them. If esbuild bundles any of these
+          // from esm.sh it wraps them in __commonJS, bypassing the req shim entirely.
+          // React bundled from esm.sh has a different ReactCurrentDispatcher than the
+          // host React, causing hook calls to fail with "Cannot read properties of null".
+          b.onResolve({ filter: /^(react|react\/jsx-runtime|react-dom|framer-motion|radix-ui|lucide-react|class-variance-authority|tailwind-merge|db|ai|router)$/ }, () => ({ external: true }))
+          b.onResolve({ filter: /^@\// }, args => {
+            const relativePath = args.path.slice(2) // '@/lib/utils' → 'lib/utils'
+            const resolved = resolveVirtualPath('', relativePath, files)
+            if (resolved) return { path: resolved, namespace: 'virtual' }
+            return { external: true }
+          })
           b.onResolve({ filter: /.*/ }, args => {
             if (args.namespace === 'virtual' && args.path.startsWith('.')) {
               const resolved = resolveVirtualPath(args.importer, args.path, files)
@@ -404,6 +523,9 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
             return null
           })
           b.onLoad({ filter: /.*/, namespace: 'virtual' }, args => {
+            // CSS is extracted separately (virtualFiles → cssCode); return empty JS so
+            // `import './styles.css'` compiles cleanly without bundling CSS into the JS output.
+            if (args.path.endsWith('.css')) return { contents: '', loader: 'js' as const }
             const content = files.get(args.path)
             if (content == null) return { errors: [{ text: `File not found: ${args.path}` }] }
             const loader = args.path.endsWith('.tsx') ? 'tsx' : args.path.endsWith('.ts') ? 'ts' : 'js'
@@ -414,15 +536,27 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
       {
         name: 'esm-sh',
         setup(b) {
-          // Resolve bare npm specifiers (including those imported from virtual files) to esm.sh
+          // Resolve bare npm specifiers to esm.sh.
+          // Exclude paths that look like local source files (.ts, .tsx, .css) — these are
+          // virtual files that aren't written yet (e.g. during progressive compilation) and
+          // should never be fetched from esm.sh.
           b.onResolve({ filter: /^[^./]/ }, args => {
+            if (/\.(tsx?|css|json)$/.test(args.path)) return null
             return { path: `https://esm.sh/${args.path}`, namespace: 'esm-sh' }
           })
-          // Resolve relative imports within esm.sh modules
-          b.onResolve({ filter: /.*/, namespace: 'esm-sh' }, args => ({
-            path: new URL(args.path, args.importer).toString(),
-            namespace: 'esm-sh',
-          }))
+          // Resolve relative imports within esm.sh modules.
+          // Redirect React imports to the external host React so esm.sh packages
+          // don't bundle a second React instance with a different dispatcher.
+          b.onResolve({ filter: /.*/, namespace: 'esm-sh' }, args => {
+            const resolved = new URL(args.path, args.importer).toString()
+            if (/esm\.sh\/(react)(@|\?|\/|$)/.test(resolved)) {
+              if (/jsx-runtime|jsx-dev-runtime/.test(resolved)) {
+                return { path: 'react/jsx-runtime', external: true }
+              }
+              return { path: 'react', external: true }
+            }
+            return { path: resolved, namespace: 'esm-sh' }
+          })
           // Fetch and cache module source from esm.sh
           b.onLoad({ filter: /.*/, namespace: 'esm-sh' }, async args => {
             const cached = esmShCache.get(args.path)
@@ -447,6 +581,17 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
 // (Anthropic API allows at most 4 total across system + tools + messages).
 function freshCacheable(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
   return markLastTurnCacheable(stripCacheControl(messages))
+}
+
+function extractText(content: Anthropic.MessageParam['content']): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return (content as Array<{ type: string; text?: string }>)
+      .filter(b => b.type === 'text')
+      .map(b => b.text ?? '')
+      .join('')
+  }
+  return ''
 }
 
 function stripCacheControl(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
@@ -474,7 +619,6 @@ const APP_VERSION_COLUMNS = {
   creatorId: apps.creatorId,
   name: apps.name,
   description: apps.description,
-  status: apps.status,
   latestVersionNumber: apps.latestVersionNumber,
   conversationHistory: apps.conversationHistory,
   createdAt: apps.createdAt,
@@ -495,7 +639,7 @@ async function loadAppWithVersion(db: import('../db').DB, appId: string) {
       appVersions,
       and(
         eq(appVersions.appId, apps.id),
-        eq(appVersions.versionNumber, apps.latestVersionNumber),
+        eq(appVersions.isDraft, true),
       ),
     )
     .where(eq(apps.id, appId))
@@ -545,7 +689,7 @@ function buildApp(fastify: Fastify) {
 
     // Draft must already exist (created via POST /apps or POST /apps/:appId/draft)
     const [draftRow] = await fastify.db
-      .select({ versionNumber: appVersions.versionNumber })
+      .select({ id: appVersions.id, versionNumber: appVersions.versionNumber, sourceFiles: appVersions.sourceFiles, compiledCode: appVersions.compiledCode })
       .from(appVersions)
       .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
       .limit(1)
@@ -556,6 +700,8 @@ function buildApp(fastify: Fastify) {
     }
 
     const targetVersionNumber = draftRow.versionNumber
+    const draftVersionId = draftRow.id
+    const buildSessionId = randomUUID()
 
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
@@ -567,14 +713,24 @@ function buildApp(fastify: Fastify) {
     const agentState = {
       name: app.name,
       description: app.description,
-      compiledCode: app.compiledCode as string | null,
+      compiledCode: (draftRow.compiledCode ?? app.compiledCode) as string | null,
     }
 
     const virtualFiles = new Map<string, string>()
 
-    // Seed with existing source files for refinement requests
-    if (Array.isArray(app.sourceFiles)) {
-      for (const f of app.sourceFiles as Array<{ path: string; content: string }>) {
+    // Seed default shadcn scaffold components first so the agent can use them without
+    // calling install_shadcn_component. Existing source files loaded below take priority.
+    for (const [path, content] of await loadScaffoldFiles()) {
+      virtualFiles.set(path, content)
+    }
+
+    // Seed with existing source files from the draft version (which always has the latest
+    // files regardless of whether latestVersionNumber has been updated yet).
+    const seedFiles = Array.isArray(draftRow.sourceFiles) && draftRow.sourceFiles.length > 0
+      ? draftRow.sourceFiles
+      : app.sourceFiles
+    if (Array.isArray(seedFiles)) {
+      for (const f of seedFiles as Array<{ path: string; content: string }>) {
         virtualFiles.set(f.path, f.content)
       }
     }
@@ -586,7 +742,13 @@ function buildApp(fastify: Fastify) {
     const messages: Anthropic.MessageParam[] = [...cachedHistory, { role: 'user', content: userMessage }]
 
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
-      const cssCode = virtualFiles.get('styles.css') ?? null
+      let cssCode: string | null
+      try {
+        cssCode = await compileTailwindCss(virtualFiles)
+      } catch (err) {
+        console.warn('[css] Tailwind compilation failed, falling back to raw styles.css:', err)
+        cssCode = virtualFiles.get('styles.css') ?? null
+      }
       const sourceFilesArray = [...virtualFiles.entries()].map(([path, content]) => ({ path, content }))
       try {
         const compiled = await compileVirtualFiles(virtualFiles)
@@ -612,20 +774,73 @@ function buildApp(fastify: Fastify) {
       }
     }
 
-    const writeFileTool = {
-      name: 'write_file',
-      description: 'Write or overwrite a file in the app project. Entry point must be "index.tsx". Add files like "components/Card.tsx", "hooks/useData.ts" as needed.',
+    // Debounce handle for progressive compilation during parallel builds
+    let progressiveCompileTimer: ReturnType<typeof setTimeout> | null = null
+
+    // Attempt a non-blocking compile and emit a partial widget event if successful.
+    // Called after every file write so the preview appears as soon as enough files exist.
+    function scheduleProgressiveCompile() {
+      if (progressiveCompileTimer) clearTimeout(progressiveCompileTimer)
+      progressiveCompileTimer = setTimeout(async () => {
+        try {
+          const result = await compileAndPersist()
+          if (!('error' in result)) {
+            const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
+            sendEvent('widget', updated)
+          }
+        } catch { /* ignore — authoritative compile runs at end */ }
+      }, 500)
+    }
+
+    const strReplaceTool = {
+      name: 'str_replace',
+      description: 'Replace old_str with new_str in a file. Requires old_str to appear exactly once — returns an error if it appears zero or more than once.',
       input_schema: {
         type: 'object' as const,
         properties: {
           path: { type: 'string', description: 'File path relative to project root' },
-          content: { type: 'string', description: 'Full file content' },
+          old_str: { type: 'string', description: 'Exact string to find and replace' },
+          new_str: { type: 'string', description: 'Replacement string' },
         },
-        required: ['path', 'content'],
+        required: ['path', 'old_str', 'new_str'],
       },
       handler: async (input: Record<string, unknown>) => {
-        virtualFiles.set(input.path as string, input.content as string)
-        return { success: true, path: input.path }
+        const path = input.path as string
+        const oldStr = input.old_str as string
+        const newStr = input.new_str as string
+        if (oldStr === '') {
+          virtualFiles.set(path, newStr)
+          return { success: true, path }
+        }
+        const existing = virtualFiles.get(path)
+        if (existing == null) return { error: `File not found: ${path}` }
+        const count = existing.split(oldStr).length - 1
+        if (count === 0) return { error: `old_str not found in ${path}` }
+        if (count > 1) return { error: `old_str appears ${count} times in ${path} — make it unique before replacing` }
+        virtualFiles.set(path, existing.replace(oldStr, newStr))
+        scheduleProgressiveCompile()
+        return { success: true, path }
+      },
+    }
+
+    const appendTextTool = {
+      name: 'append_text',
+      description: 'Append text to the end of a file. Creates the file if it does not exist.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          path: { type: 'string', description: 'File path relative to project root' },
+          text: { type: 'string', description: 'Text to append' },
+        },
+        required: ['path', 'text'],
+      },
+      handler: async (input: Record<string, unknown>) => {
+        const path = input.path as string
+        const text = input.text as string
+        const existing = virtualFiles.get(path) ?? ''
+        virtualFiles.set(path, existing + text)
+        scheduleProgressiveCompile()
+        return { success: true, path }
       },
     }
 
@@ -649,9 +864,96 @@ function buildApp(fastify: Fastify) {
       handler: async () => ({ files: [...virtualFiles.keys()] }),
     }
 
+    const grepFileTool = {
+      name: 'grep_file',
+      description: 'Search for a pattern in a specific file. Returns matching lines with their line numbers and optional surrounding context. Use this instead of read_file when you only need to check a specific function, import, or component name.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          path: { type: 'string', description: 'File path relative to project root' },
+          pattern: { type: 'string', description: 'Regular expression pattern to search for' },
+          contextLines: { type: 'number', description: 'Number of lines of context to include before and after each match (default: 2)' },
+        },
+        required: ['path', 'pattern'],
+      },
+      handler: async (input: Record<string, unknown>) => {
+        const content = virtualFiles.get(input.path as string)
+        if (content == null) return { error: `File not found: ${input.path}` }
+        const lines = content.split('\n')
+        const regex = new RegExp(input.pattern as string)
+        const context = (input.contextLines as number | undefined) ?? 2
+        const matchedRanges: Array<[number, number]> = []
+        lines.forEach((line, i) => { if (regex.test(line)) matchedRanges.push([Math.max(0, i - context), Math.min(lines.length - 1, i + context)]) })
+        if (matchedRanges.length === 0) return { matches: [] }
+        const merged: Array<[number, number]> = [matchedRanges[0]]
+        for (const [start, end] of matchedRanges.slice(1)) {
+          if (start <= merged[merged.length - 1][1] + 1) merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], end)
+          else merged.push([start, end])
+        }
+        const matches = merged.map(([start, end]) => ({
+          startLine: start + 1,
+          lines: lines.slice(start, end + 1).map((l, i) => `${start + i + 1}: ${l}`).join('\n'),
+        }))
+        return { matches }
+      },
+    }
+
+    const readFileRangeTool = {
+      name: 'read_file_range',
+      description: 'Read a specific range of lines from a file. Use this when you know which section you need (e.g. a specific component or function) instead of reading the entire file.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          path: { type: 'string', description: 'File path relative to project root' },
+          startLine: { type: 'number', description: '1-based line number to start reading from' },
+          endLine: { type: 'number', description: '1-based line number to stop reading at (inclusive)' },
+        },
+        required: ['path', 'startLine', 'endLine'],
+      },
+      handler: async (input: Record<string, unknown>) => {
+        const content = virtualFiles.get(input.path as string)
+        if (content == null) return { error: `File not found: ${input.path}` }
+        const lines = content.split('\n')
+        const start = Math.max(0, (input.startLine as number) - 1)
+        const end = Math.min(lines.length, input.endLine as number)
+        return { content: lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join('\n'), totalLines: lines.length }
+      },
+    }
+
+    const searchFilesTool = {
+      name: 'search_files',
+      description: 'Search for a pattern across all files in the project. Returns file names and matching lines with line numbers. Use this to find where a type, function, or import is defined across the codebase.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          pattern: { type: 'string', description: 'Regular expression pattern to search for' },
+          contextLines: { type: 'number', description: 'Number of context lines around each match (default: 1)' },
+        },
+        required: ['pattern'],
+      },
+      handler: async (input: Record<string, unknown>) => {
+        const regex = new RegExp(input.pattern as string)
+        const context = (input.contextLines as number | undefined) ?? 1
+        const results: Array<{ path: string; matches: Array<{ line: number; text: string }> }> = []
+        for (const [path, content] of virtualFiles) {
+          const lines = content.split('\n')
+          const fileMatches: Array<{ line: number; text: string }> = []
+          lines.forEach((line, i) => {
+            if (regex.test(line)) {
+              const start = Math.max(0, i - context)
+              const end = Math.min(lines.length - 1, i + context)
+              lines.slice(start, end + 1).forEach((l, j) => fileMatches.push({ line: start + j + 1, text: l }))
+            }
+          })
+          if (fileMatches.length > 0) results.push({ path, matches: fileMatches })
+        }
+        return { results }
+      },
+    }
+
     const askUserTool = {
       name: 'ask_user',
-      description: 'Ask the user a clarifying question before building. Use this when the request is ambiguous or missing key information needed to design the app. Ask at most 1-2 focused questions.',
+      description: 'ask the user a question either for clarification or information needed to complete the task',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -691,10 +993,10 @@ function buildApp(fastify: Fastify) {
         onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
         onText: (delta: string) => sendEvent('text', { text: delta }),
         onToolCall: (name: string, input: unknown, result: unknown) => sendEvent('tool_call', { name, input, result }),
-        onUsage: async (usage: Anthropic.Usage, model: string) => {
+        onUsage: async (usage: Anthropic.Usage, model: string, durationSeconds: number) => {
           const mu = tokensToMicroUnits(usage, model)
           await checkAndDeductCredits(fastify.db, userId, mu)
-          await logUsage(fastify.db, userId, 'build', model, usage, mu)
+          await logUsage(fastify.db, userId, 'build', model, usage, mu, draftVersionId, userMessage, buildSessionId, durationSeconds)
         },
       }
 
@@ -724,215 +1026,80 @@ function buildApp(fastify: Fastify) {
         },
       }
 
-      const setAppMetadataTool = {
-        name: 'set_app_metadata',
-        description: 'Set the display name and one-sentence description for the app.',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            name: { type: 'string' },
-            description: { type: 'string' },
-          },
-          required: ['name', 'description'],
-        },
-        handler: async (input: Record<string, unknown>) => {
-          agentState.name = input.name as string
-          agentState.description = input.description as string
-          await fastify.db
-            .update(apps)
-            .set({ name: agentState.name, description: agentState.description, updatedAt: new Date() })
-            .where(eq(apps.id, appId))
-          return { success: true }
-        },
-      }
 
-      const shadcn = await createShadcnMcpTools()
       let allMessages: Anthropic.MessageParam[] = []
 
-      try {
-        const buildTools = [
-          ...shadcn.tools,
-          setupDatabaseTool,
-          setAppMetadataTool,
-          writeFileTool,
-          readFileTool,
-          listFilesTool,
-          askUserTool,
-        ]
+      // --- Build phase ---
+      const buildTools = [
+        setupDatabaseTool,
+        strReplaceTool,
+        appendTextTool,
+        readFileTool,
+        readFileRangeTool,
+        grepFileTool,
+        searchFilesTool,
+        listFilesTool,
+        askUserTool,
+      ]
 
-        const buildLoopParams = {
+
+      // --- Planning phase (fresh builds only) ---
+      let buildMessages = messages
+      if (!isRefinement) {
+        const planResult = await runAgentLoop({
+          effort: 'medium',
+          messages: [{ role: 'user', content: userMessage }],
           tools: buildTools,
-          system: BUILD_SYSTEM,
-          maxTokens: 20000,
-          thinking: { budget_tokens: 8000 },
+          system: PLAN_SYSTEM,
           ...sharedAgentParams,
+        })
+        const lastPlanMsg = planResult.findLast(m => m.role === 'assistant')
+        const planText = lastPlanMsg ? extractText(lastPlanMsg.content) : ''
+        if (planText) {
+          buildMessages = [{ role: 'user', content: `${userMessage}\n\n---\n## Design Plan\n\n${planText}` }]
         }
-
-        async function runBuildWithRetry(msgs: Anthropic.MessageParam[]): Promise<Anthropic.MessageParam[]> {
-          let result = await runAgentLoop({ messages: msgs, ...buildLoopParams })
-          const MAX_COMPILE_RETRIES = 2
-          for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
-            if (virtualFiles.size === 0) break
-            const compileResult = await compileAndPersist()
-            if (!('error' in compileResult)) break
-            if (attempt === MAX_COMPILE_RETRIES) {
-              sendEvent('error', { message: `Compile error: ${compileResult.error}` })
-              break
-            }
-            const retryMsgs = freshCacheable(result)
-            retryMsgs.push({ role: 'user', content: `Compilation failed:\n\n${compileResult.error}\n\nPlease fix the issue.` })
-            result = await runAgentLoop({ messages: retryMsgs, ...buildLoopParams })
-          }
-          return result
-        }
-
-        if (isRefinement) {
-          // Refinement: go straight to build
-          allMessages = await runBuildWithRetry(messages)
-          if (virtualFiles.size > 0) {
-            const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
-            sendEvent('widget', updated)
-          }
-        } else {
-          // New build: 9-step workflow
-
-          // Step 1: Clarify
-          sendEvent('step_start', { step: 1, label: 'Clarifying requirements' })
-          const clarifyMessages = await runAgentLoop({
-            messages: [{ role: 'user', content: userMessage }],
-            tools: [askUserTool],
-            system: CLARIFY_SYSTEM,
-            maxTokens: 2048 * 2,
-            thinking: { budget_tokens: 1024 },
-            ...sharedAgentParams,
-          })
-
-          // Step 2: Break down into stages
-          sendEvent('step_start', { step: 2, label: 'defining stages' })
-          const buildStages: Array<{ name: string; description: string }> = []
-          const setBuildStagesTool = {
-            name: 'set_build_stages',
-            description: 'Lock in the high-level build stages for this app.',
-            input_schema: {
-              type: 'object' as const,
-              properties: {
-                stages: {
-                  type: 'array',
-                  items: {
-                    type: 'object' as const,
-                    properties: {
-                      name: { type: 'string' },
-                      description: { type: 'string' },
-                    },
-                    required: ['name', 'description'],
-                  },
-                },
-              },
-              required: ['stages'],
-            },
-            handler: async (input: Record<string, unknown>) => {
-              const stages = input.stages as Array<{ name: string; description: string }>
-              buildStages.push(...stages)
-              sendEvent('stages_defined', { stages: stages.map(s => s.name) })
-              return { success: true, stageCount: stages.length }
-            },
-          }
-          const breakdownMessages = await runAgentLoop({
-            messages: [
-              ...freshCacheable(clarifyMessages),
-              { role: 'user', content: 'Now break this app down into high-level build stages.' },
-            ],
-            tools: [askUserTool, setBuildStagesTool],
-            system: BREAKDOWN_SYSTEM,
-            maxTokens: 2048 * 2,
-            thinking: { budget_tokens: 1024 },
-            ...sharedAgentParams,
-          })
-          console.log('[build] stages defined:', buildStages.map(s => s.name))
-          await saveProgress(breakdownMessages)
-
-          // Step 3+4: Design plan + define build phases
-          sendEvent('step_start', { step: 3, label: 'Creating design plan' })
-          const buildPhases = buildStages
-          
-          const planMessages = await runAgentLoop({
-            messages: [
-              ...freshCacheable(breakdownMessages),
-              { role: 'user', content: 'Now create the detailed design plan' },
-            ],
-            system: PLAN_SYSTEM,
-            maxTokens: 2048 * 4,
-            thinking: { budget_tokens: 1024 * 3 },
-            ...sharedAgentParams,
-          })
-          if (buildPhases.length === 0) {
-            buildPhases.push({ name: 'Full build', description: 'Build the complete app.' })
-          }
-          
-          await saveProgress(planMessages)
-
-          // Steps 5–N: Phase build loop
-          sendEvent('step_start', { step: 4, label: `Building ${buildPhases.length} stage${buildPhases.length !== 1 ? 's' : ''}` })
-          let phaseMessages = freshCacheable(planMessages)
-
-          for (let i = 0; i < buildPhases.length; i++) {
-            const phase = buildPhases[i]
-            sendEvent('phase_start', { name: phase.name, index: i, total: buildPhases.length })
-
-            const phaseResult = await runBuildWithRetry([
-              ...phaseMessages,
-              { role: 'user', content: `Build Stage ${i + 1} of ${buildPhases.length}: ${phase.name}\n\n${phase.description}` },
-            ])
-
-            if (virtualFiles.size > 0) {
-              const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
-              sendEvent('widget', updated)
-            }
-
-            // Phase self-check
-            const checkMessages = await runAgentLoop({
-              messages: [
-                ...freshCacheable(phaseResult),
-                { role: 'user', content: `Review what was just built in phase "${phase.name}". Check it against the design plan and flag any issues before continuing.` },
-              ],
-              tools: [askUserTool],
-              system: PHASE_CHECK_SYSTEM,
-              maxTokens: 2048 * 2,
-              thinking: { budget_tokens: 1024 },
-              ...sharedAgentParams,
-            })
-
-            sendEvent('phase_complete', { name: phase.name, index: i })
-            await saveProgress(checkMessages)
-            phaseMessages = freshCacheable(checkMessages)
-          }
-
-          // Step 9: Final review
-          sendEvent('step_start', { step: 9, label: 'Reviewing' })
-          allMessages = await runAgentLoop({
-            messages: [
-              ...phaseMessages,
-              { role: 'user', content: 'Give a brief overview of what was built, how it maps to the original request, and suggest what to try next.' },
-            ],
-            tools: [],
-            system: REVIEW_SYSTEM,
-            maxTokens: 2048 * 2,
-            thinking: { budget_tokens: 1024 },
-            ...sharedAgentParams,
-          })
-          await saveProgress(allMessages)
-        }
-      } finally {
-        await shadcn.close()
+        await saveProgress(buildMessages)
       }
 
-      // Refinements save here; new builds already saved incrementally via saveProgress()
-      if (isRefinement) {
-        await saveProgress(allMessages)
+
+      const buildLoopParams = {
+        tools: buildTools,
+        system: BUILD_SYSTEM,
+        maxTokens: 20000,
+        ...sharedAgentParams,
       }
 
-      const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
-      sendEvent('widget', updated)
+      async function runBuildWithRetry(msgs: Anthropic.MessageParam[]): Promise<Anthropic.MessageParam[]> {
+        let result = await runAgentLoop({ messages: msgs, ...buildLoopParams, effort: 'medium' })
+        const MAX_COMPILE_RETRIES = 2
+        for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
+          if (virtualFiles.size === 0) break
+          if (progressiveCompileTimer) {
+            clearTimeout(progressiveCompileTimer)
+            progressiveCompileTimer = null
+          }
+          const compileResult = await compileAndPersist()
+          if (!('error' in compileResult)) break
+          if (attempt === MAX_COMPILE_RETRIES) {
+            sendEvent('error', { message: `Compile error: ${compileResult.error}` })
+            break
+          }
+          const retryMsgs = freshCacheable(result)
+          retryMsgs.push({ role: 'user', content: `Compilation failed:\n\n${compileResult.error}\n\nPlease fix the issue.` })
+          console.log(`Compile failed (attempt ${attempt + 1}/${MAX_COMPILE_RETRIES}), retrying agent loop with updated messages...`)
+          result = await runAgentLoop({ messages: retryMsgs, ...buildLoopParams, effort: 'medium' })
+        }
+        return result
+      }
+
+      allMessages = await runBuildWithRetry(buildMessages)
+
+      await saveProgress(allMessages)
+
+      if (virtualFiles.size > 0) {
+        const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
+        sendEvent('widget', updated)
+      }
     } catch (err) {
       if (err instanceof InsufficientCreditsError) {
         sendEvent('error', { code: 'insufficient_credits', message: 'Insufficient credits' })
@@ -1004,6 +1171,124 @@ function answerAppQuestion(fastify: Fastify) {
     pendingQuestions.delete(questionId)
     resolve(answer)
     return reply.send({ ok: true })
+  })
+}
+
+function getAppUsage(fastify: Fastify) {
+  fastify.get<{ Params: { appId: string } }>('/apps/:appId/usage', {
+    schema: {
+      tags: ['apps'],
+      summary: 'Get per-version token usage for an app',
+    },
+  }, async (request, reply) => {
+    const { appId } = request.params
+    const userId = getCurrentUserId()
+
+    const app = await fastify.db
+      .select({ creatorId: apps.creatorId })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1)
+    if (!app[0]) return reply.code(404).send({ error: 'App not found' })
+    if (app[0].creatorId !== userId) return reply.code(403).send({ error: 'Forbidden' })
+
+    const rows = await fastify.db
+      .select({
+        appVersionId: aiUsageLogs.appVersionId,
+        versionNumber: appVersions.versionNumber,
+        isDraft: appVersions.isDraft,
+        buildSessionId: aiUsageLogs.buildSessionId,
+        userMessage: aiUsageLogs.userMessage,
+        model: aiUsageLogs.model,
+        inputTokens: sql<number>`sum(${aiUsageLogs.inputTokens})::int`,
+        outputTokens: sql<number>`sum(${aiUsageLogs.outputTokens})::int`,
+        cacheCreationTokens: sql<number>`sum(${aiUsageLogs.cacheCreationTokens})::int`,
+        cacheReadTokens: sql<number>`sum(${aiUsageLogs.cacheReadTokens})::int`,
+        microUnitsUsed: sql<string>`sum(${aiUsageLogs.microUnitsUsed})::text`,
+        durationSeconds: sql<number>`sum(${aiUsageLogs.durationSeconds})::real`,
+        createdAt: sql<string>`min(${aiUsageLogs.createdAt})::text`,
+      })
+      .from(aiUsageLogs)
+      .innerJoin(appVersions, eq(aiUsageLogs.appVersionId, appVersions.id))
+      .where(and(
+        eq(appVersions.appId, appId),
+        isNotNull(aiUsageLogs.buildSessionId),
+      ))
+      .groupBy(
+        aiUsageLogs.appVersionId,
+        appVersions.versionNumber,
+        appVersions.isDraft,
+        aiUsageLogs.buildSessionId,
+        aiUsageLogs.userMessage,
+        aiUsageLogs.model,
+      )
+      .orderBy(appVersions.versionNumber, sql`min(${aiUsageLogs.createdAt})`)
+
+    // Group by version
+    const versionMap = new Map<string, {
+      appVersionId: string
+      versionNumber: number
+      isDraft: boolean
+      builds: Array<{
+        buildSessionId: string
+        userMessage: string | null
+        model: string
+        inputTokens: number
+        outputTokens: number
+        cacheCreationTokens: number
+        cacheReadTokens: number
+        microUnitsUsed: string
+        durationSeconds: number | null
+        createdAt: string
+      }>
+      totalInputTokens: number
+      totalOutputTokens: number
+      totalCacheCreationTokens: number
+      totalCacheReadTokens: number
+      totalMicroUnitsUsed: bigint
+    }>()
+
+    for (const row of rows) {
+      const vId = row.appVersionId!
+      if (!versionMap.has(vId)) {
+        versionMap.set(vId, {
+          appVersionId: vId,
+          versionNumber: row.versionNumber,
+          isDraft: row.isDraft,
+          builds: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          totalCacheCreationTokens: 0,
+          totalCacheReadTokens: 0,
+          totalMicroUnitsUsed: 0n,
+        })
+      }
+      const v = versionMap.get(vId)!
+      v.builds.push({
+        buildSessionId: row.buildSessionId!,
+        userMessage: row.userMessage,
+        model: row.model,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheCreationTokens: row.cacheCreationTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        microUnitsUsed: row.microUnitsUsed,
+        durationSeconds: row.durationSeconds,
+        createdAt: row.createdAt,
+      })
+      v.totalInputTokens += row.inputTokens
+      v.totalOutputTokens += row.outputTokens
+      v.totalCacheCreationTokens += row.cacheCreationTokens
+      v.totalCacheReadTokens += row.cacheReadTokens
+      v.totalMicroUnitsUsed += BigInt(row.microUnitsUsed)
+    }
+
+    const result = Array.from(versionMap.values()).map(v => ({
+      ...v,
+      totalMicroUnitsUsed: v.totalMicroUnitsUsed.toString(),
+    }))
+
+    return reply.send(result)
   })
 }
 

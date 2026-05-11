@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import * as ReactJSXRuntime from 'react/jsx-runtime'
 import * as FramerMotion from 'framer-motion'
 import * as RadixUI from 'radix-ui'
 import * as LucideIcons from 'lucide-react'
@@ -27,7 +28,16 @@ import prefixSelector from 'postcss-prefix-selector'
 const WIDGET_SCOPE = 'widget-root'
 
 function scopeCss(css: string): string {
-  return postcss([prefixSelector({ prefix: `.${WIDGET_SCOPE}` })]).process(css, { from: undefined }).css
+  return postcss([
+    prefixSelector({
+      prefix: `.${WIDGET_SCOPE}`,
+      transform(prefix: string, selector: string, prefixedSelector: string) {
+        if (selector === ':root') return prefix
+        if (selector === '.dark') return `.dark ${prefix}`
+        return prefixedSelector
+      },
+    }),
+  ]).process(css, { from: undefined }).css
 }
 
 const routerModule = {
@@ -140,6 +150,7 @@ export function AppPreview({
       const moduleObj = { exports: exportsObj }
       const req = (name: string) => {
         if (name === 'react') return React
+        if (name === 'react/jsx-runtime') return ReactJSXRuntime
         if (name === 'router') return routerModule
         if (name === 'db') return {
           query: (sql: string, params?: unknown[]) => appId ? queryAppDb(appId, sql, params, draft) : Promise.reject(new Error('No appId')),

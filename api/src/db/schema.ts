@@ -1,6 +1,5 @@
-import { pgTable, pgEnum, text, timestamp, uuid, jsonb, integer, boolean, unique, primaryKey, bigint } from 'drizzle-orm/pg-core'
+import { pgTable, pgEnum, text, timestamp, uuid, jsonb, integer, boolean, unique, primaryKey, bigint, real } from 'drizzle-orm/pg-core'
 
-export const appStatusEnum = pgEnum('app_status', ['draft', 'published'])
 export const submissionStatusEnum = pgEnum('submission_status', ['pending', 'approved', 'rejected'])
 
 export const users = pgTable('users', {
@@ -16,7 +15,6 @@ export const apps = pgTable('apps', {
   creatorId: uuid('creator_id').references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
-  status: appStatusEnum('status').notNull().default('draft'),
   conversationHistory: jsonb('conversation_history').notNull().default([]),
   latestVersionNumber: integer('latest_version_number').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -83,5 +81,9 @@ export const aiUsageLogs = pgTable('ai_usage_logs', {
   cacheCreationTokens: integer('cache_creation_tokens').notNull().default(0),
   cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
   microUnitsUsed: bigint('micro_units_used', { mode: 'bigint' }).notNull(),
+  appVersionId: uuid('app_version_id').references(() => appVersions.id, { onDelete: 'set null' }),
+  userMessage: text('user_message'),
+  buildSessionId: uuid('build_session_id'),
+  durationSeconds: real('duration_seconds'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })

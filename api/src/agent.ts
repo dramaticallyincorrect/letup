@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { Model } from '@anthropic-ai/sdk/resources'
+import { Model, OutputConfig } from '@anthropic-ai/sdk/resources'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, baseURL: 'https://api.deepseek.com/anthropic' })
 
 export type AgentTool = Anthropic.Tool & {
   handler: (input: Record<string, unknown>) => Promise<unknown>
@@ -58,21 +58,22 @@ export async function runAgentLoop(params: {
   messages: Anthropic.MessageParam[]
   tools?: AgentTool[]
   system: SystemPrompt
-  model?: Model
+  model?: Model,
+  effort: OutputConfig['effort']
   maxTokens?: number
   /** Enable extended thinking. budget_tokens must be < maxTokens. */
   thinking?: { budget_tokens: number }
   onText?: (delta: string) => void
   onThinking?: (delta: string) => void
   onToolCall?: (name: string, input: unknown, result: unknown) => void
-  onUsage?: (usage: Anthropic.Usage, model: string) => void | Promise<void>
+  onUsage?: (usage: Anthropic.Usage, model: string, durationSeconds: number) => void | Promise<void>
 }): Promise<Anthropic.MessageParam[]> {
   const {
     messages,
     tools = [],
     system,
     model = 'claude-sonnet-4-6',
-    maxTokens = 16000,
+    effort = 'medium',
     thinking,
     onText,
     onThinking,
@@ -99,25 +100,36 @@ export async function runAgentLoop(params: {
     console.log(`[agent] iteration ${iteration} — sending request`)
 
     const baseParams = {
-      model,
-      max_tokens: maxTokens,
+      model: 'deepseek-v4-pro',
       system: system as Anthropic.MessageStreamParams['system'],
       tools: sdkTools.length > 0 ? sdkTools : undefined,
       messages,
-      ...(thinking
-        ? { thinking: { type: 'enabled' as const, budget_tokens: thinking.budget_tokens } }
-        : {}),
     }
 
-    const stream = anthropic.messages.stream(baseParams)
+    const iterStart = Date.now()
+    const stream = anthropic.messages.stream({
+      max_tokens: 20_000,
+      ...baseParams, 
+      thinking: {
+        type: 'adaptive',
+      }, output_config: {
+        effort: effort
+      }
+    })
 
     const toolUseBlocks = new Map<number, { id: string; name: string; inputJson: string }>()
 
+    let firstMessage = false
     for await (const event of stream) {
+      if (!firstMessage) {
+        const durationSeconds = (Date.now() - iterStart) / 1000
+        console.log(`[agent] received first message for iteration ${iteration} after ${durationSeconds}s, model is responding... ${event}`)
+        firstMessage = true
+      }
+      firstMessage = true
       if (event.type === 'content_block_start') {
         const type = event.content_block.type
         if (type === 'tool_use') {
-          console.log(`[agent]   tool_use: ${event.content_block.name}`)
           toolUseBlocks.set(event.index, {
             id: event.content_block.id,
             name: event.content_block.name,
@@ -137,8 +149,9 @@ export async function runAgentLoop(params: {
     }
 
     const finalMessage = await stream.finalMessage()
-    console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size}`)
-    await onUsage?.(finalMessage.usage, model)
+    const durationSeconds = (Date.now() - iterStart) / 1000
+    console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size} duration=${durationSeconds}s`)
+    await onUsage?.(finalMessage.usage, model, durationSeconds)
 
     if (finalMessage.stop_reason === 'max_tokens') {
       throw new Error('Claude response exceeded max_tokens limit')
@@ -147,27 +160,27 @@ export async function runAgentLoop(params: {
     messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
 
     if (toolUseBlocks.size > 0) {
-      const toolResults: Anthropic.ToolResultBlockParam[] = []
+      const toolResults = await Promise.all(
+        [...toolUseBlocks.values()].map(async block => {
+          const input = JSON.parse(block.inputJson || '{}') as Record<string, unknown>
+          const toolDef = tools.find(t => t.name === block.name)
+          let result: unknown
 
-      for (const block of toolUseBlocks.values()) {
-        const input = JSON.parse(block.inputJson || '{}') as Record<string, unknown>
-        const toolDef = tools.find(t => t.name === block.name)
-        let result: unknown
+          if (toolDef) {
+            onToolCall?.(block.name, input, null)
+            result = await toolDef.handler(input)
+            console.log(`[agent]   executed tool handler for: ${block.name}`)
+          } else {
+            result = { error: `Unknown tool: ${block.name}, availble tools are ${sdkTools.map((t) => t.name + ' ,')}` }
+          }
 
-        if (toolDef) {
-          onToolCall?.(block.name, input, result)
-          result = await toolDef.handler(input)
-        } else {
-          result = { error: `Unknown tool: ${block.name}, availble tools are ${sdkTools.map((t) => t.name + ' ,')}` }
-        }
-
-        console.log(`[agent]   executed local tool: ${block.name}`)
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: JSON.stringify(result),
+          return {
+            type: 'tool_result' as const,
+            tool_use_id: block.id,
+            content: JSON.stringify(result),
+          } satisfies Anthropic.ToolResultBlockParam
         })
-      }
+      )
 
       messages.push({ role: 'user', content: toolResults })
     } else {
