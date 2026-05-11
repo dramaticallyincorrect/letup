@@ -14,6 +14,7 @@ import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
+import { VirtualFS } from '../virtual-fs/virtual-fs'
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
 const PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
@@ -476,7 +477,7 @@ async function compileTailwindCss(files: Map<string, string>): Promise<string> {
   const cssInput = `@import "tailwindcss";\n${userCss}`
   const compiler = await compile(cssInput, {
     base: join(__dirname, '../../..'),
-    onDependency: () => {},
+    onDependency: () => { },
   })
   return compiler.build(extractTailwindCandidates(files))
 }
@@ -710,30 +711,8 @@ function buildApp(fastify: Fastify) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
 
-    const agentState = {
-      name: app.name,
-      description: app.description,
-      compiledCode: (draftRow.compiledCode ?? app.compiledCode) as string | null,
-    }
+    const appFs = await getAppFs(fastify, appId)
 
-    const virtualFiles = new Map<string, string>()
-
-    // Seed default shadcn scaffold components first so the agent can use them without
-    // calling install_shadcn_component. Existing source files loaded below take priority.
-    for (const [path, content] of await loadScaffoldFiles()) {
-      virtualFiles.set(path, content)
-    }
-
-    // Seed with existing source files from the draft version (which always has the latest
-    // files regardless of whether latestVersionNumber has been updated yet).
-    const seedFiles = Array.isArray(draftRow.sourceFiles) && draftRow.sourceFiles.length > 0
-      ? draftRow.sourceFiles
-      : app.sourceFiles
-    if (Array.isArray(seedFiles)) {
-      for (const f of seedFiles as Array<{ path: string; content: string }>) {
-        virtualFiles.set(f.path, f.content)
-      }
-    }
 
     const history = (Array.isArray(app.conversationHistory) ? app.conversationHistory : []) as Anthropic.MessageParam[]
     const isRefinement = history.length > 0
@@ -744,15 +723,14 @@ function buildApp(fastify: Fastify) {
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
       let cssCode: string | null
       try {
-        cssCode = await compileTailwindCss(virtualFiles)
+        cssCode = await compileTailwindCss(appFs.files)
       } catch (err) {
         console.warn('[css] Tailwind compilation failed, falling back to raw styles.css:', err)
-        cssCode = virtualFiles.get('styles.css') ?? null
+        cssCode = appFs.files.get('styles.css') ?? null
       }
-      const sourceFilesArray = [...virtualFiles.entries()].map(([path, content]) => ({ path, content }))
+      const sourceFilesArray = [...appFs.files.entries()].map(([path, content]) => ({ path, content }))
       try {
-        const compiled = await compileVirtualFiles(virtualFiles)
-        agentState.compiledCode = compiled
+        const compiled = await compileVirtualFiles(appFs.files)
         await fastify.db
           .insert(appVersions)
           .values({ appId, versionNumber: targetVersionNumber, compiledCode: compiled, cssCode, sourceFiles: sourceFilesArray, isDraft: true })
@@ -790,165 +768,6 @@ function buildApp(fastify: Fastify) {
           }
         } catch { /* ignore — authoritative compile runs at end */ }
       }, 500)
-    }
-
-    const strReplaceTool = {
-      name: 'str_replace',
-      description: 'Replace old_str with new_str in a file. Requires old_str to appear exactly once — returns an error if it appears zero or more than once.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          path: { type: 'string', description: 'File path relative to project root' },
-          old_str: { type: 'string', description: 'Exact string to find and replace' },
-          new_str: { type: 'string', description: 'Replacement string' },
-        },
-        required: ['path', 'old_str', 'new_str'],
-      },
-      handler: async (input: Record<string, unknown>) => {
-        const path = input.path as string
-        const oldStr = input.old_str as string
-        const newStr = input.new_str as string
-        if (oldStr === '') {
-          virtualFiles.set(path, newStr)
-          return { success: true, path }
-        }
-        const existing = virtualFiles.get(path)
-        if (existing == null) return { error: `File not found: ${path}` }
-        const count = existing.split(oldStr).length - 1
-        if (count === 0) return { error: `old_str not found in ${path}` }
-        if (count > 1) return { error: `old_str appears ${count} times in ${path} — make it unique before replacing` }
-        virtualFiles.set(path, existing.replace(oldStr, newStr))
-        scheduleProgressiveCompile()
-        return { success: true, path }
-      },
-    }
-
-    const appendTextTool = {
-      name: 'append_text',
-      description: 'Append text to the end of a file. Creates the file if it does not exist.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          path: { type: 'string', description: 'File path relative to project root' },
-          text: { type: 'string', description: 'Text to append' },
-        },
-        required: ['path', 'text'],
-      },
-      handler: async (input: Record<string, unknown>) => {
-        const path = input.path as string
-        const text = input.text as string
-        const existing = virtualFiles.get(path) ?? ''
-        virtualFiles.set(path, existing + text)
-        scheduleProgressiveCompile()
-        return { success: true, path }
-      },
-    }
-
-    const readFileTool = {
-      name: 'read_file',
-      description: 'Read a file previously written in this session.',
-      input_schema: {
-        type: 'object' as const,
-        properties: { path: { type: 'string' } },
-        required: ['path'],
-      },
-      handler: async (input: Record<string, unknown>) => ({
-        content: virtualFiles.get(input.path as string) ?? null,
-      }),
-    }
-
-    const listFilesTool = {
-      name: 'list_files',
-      description: 'List all files currently written in the app project.',
-      input_schema: { type: 'object' as const, properties: {} },
-      handler: async () => ({ files: [...virtualFiles.keys()] }),
-    }
-
-    const grepFileTool = {
-      name: 'grep_file',
-      description: 'Search for a pattern in a specific file. Returns matching lines with their line numbers and optional surrounding context. Use this instead of read_file when you only need to check a specific function, import, or component name.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          path: { type: 'string', description: 'File path relative to project root' },
-          pattern: { type: 'string', description: 'Regular expression pattern to search for' },
-          contextLines: { type: 'number', description: 'Number of lines of context to include before and after each match (default: 2)' },
-        },
-        required: ['path', 'pattern'],
-      },
-      handler: async (input: Record<string, unknown>) => {
-        const content = virtualFiles.get(input.path as string)
-        if (content == null) return { error: `File not found: ${input.path}` }
-        const lines = content.split('\n')
-        const regex = new RegExp(input.pattern as string)
-        const context = (input.contextLines as number | undefined) ?? 2
-        const matchedRanges: Array<[number, number]> = []
-        lines.forEach((line, i) => { if (regex.test(line)) matchedRanges.push([Math.max(0, i - context), Math.min(lines.length - 1, i + context)]) })
-        if (matchedRanges.length === 0) return { matches: [] }
-        const merged: Array<[number, number]> = [matchedRanges[0]]
-        for (const [start, end] of matchedRanges.slice(1)) {
-          if (start <= merged[merged.length - 1][1] + 1) merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], end)
-          else merged.push([start, end])
-        }
-        const matches = merged.map(([start, end]) => ({
-          startLine: start + 1,
-          lines: lines.slice(start, end + 1).map((l, i) => `${start + i + 1}: ${l}`).join('\n'),
-        }))
-        return { matches }
-      },
-    }
-
-    const readFileRangeTool = {
-      name: 'read_file_range',
-      description: 'Read a specific range of lines from a file. Use this when you know which section you need (e.g. a specific component or function) instead of reading the entire file.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          path: { type: 'string', description: 'File path relative to project root' },
-          startLine: { type: 'number', description: '1-based line number to start reading from' },
-          endLine: { type: 'number', description: '1-based line number to stop reading at (inclusive)' },
-        },
-        required: ['path', 'startLine', 'endLine'],
-      },
-      handler: async (input: Record<string, unknown>) => {
-        const content = virtualFiles.get(input.path as string)
-        if (content == null) return { error: `File not found: ${input.path}` }
-        const lines = content.split('\n')
-        const start = Math.max(0, (input.startLine as number) - 1)
-        const end = Math.min(lines.length, input.endLine as number)
-        return { content: lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join('\n'), totalLines: lines.length }
-      },
-    }
-
-    const searchFilesTool = {
-      name: 'search_files',
-      description: 'Search for a pattern across all files in the project. Returns file names and matching lines with line numbers. Use this to find where a type, function, or import is defined across the codebase.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          pattern: { type: 'string', description: 'Regular expression pattern to search for' },
-          contextLines: { type: 'number', description: 'Number of context lines around each match (default: 1)' },
-        },
-        required: ['pattern'],
-      },
-      handler: async (input: Record<string, unknown>) => {
-        const regex = new RegExp(input.pattern as string)
-        const context = (input.contextLines as number | undefined) ?? 1
-        const results: Array<{ path: string; matches: Array<{ line: number; text: string }> }> = []
-        for (const [path, content] of virtualFiles) {
-          const lines = content.split('\n')
-          const fileMatches: Array<{ line: number; text: string }> = []
-          lines.forEach((line, i) => {
-            if (regex.test(line)) {
-              const start = Math.max(0, i - context)
-              const end = Math.min(lines.length - 1, i + context)
-              lines.slice(start, end + 1).forEach((l, j) => fileMatches.push({ line: start + j + 1, text: l }))
-            }
-          })
-          if (fileMatches.length > 0) results.push({ path, matches: fileMatches })
-        }
-        return { results }
-      },
     }
 
     const askUserTool = {
@@ -1032,13 +851,13 @@ function buildApp(fastify: Fastify) {
       // --- Build phase ---
       const buildTools = [
         setupDatabaseTool,
-        strReplaceTool,
-        appendTextTool,
-        readFileTool,
-        readFileRangeTool,
-        grepFileTool,
-        searchFilesTool,
-        listFilesTool,
+        appFs.strReplaceTool,
+        appFs.appendTextTool,
+        appFs.readFileTool,
+        appFs.readFileRangeTool,
+        appFs.grepFileTool,
+        appFs.searchFilesTool,
+        appFs.listFilesTool,
         askUserTool,
       ]
 
@@ -1073,7 +892,7 @@ function buildApp(fastify: Fastify) {
         let result = await runAgentLoop({ messages: msgs, ...buildLoopParams, effort: 'medium' })
         const MAX_COMPILE_RETRIES = 2
         for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
-          if (virtualFiles.size === 0) break
+          if (appFs.files.size === 0) break
           if (progressiveCompileTimer) {
             clearTimeout(progressiveCompileTimer)
             progressiveCompileTimer = null
@@ -1096,7 +915,7 @@ function buildApp(fastify: Fastify) {
 
       await saveProgress(allMessages)
 
-      if (virtualFiles.size > 0) {
+      if (appFs.files.size > 0) {
         const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
         sendEvent('widget', updated)
       }
@@ -1113,6 +932,37 @@ function buildApp(fastify: Fastify) {
     reply.raw.end()
   })
 }
+
+async function getAppFs(fastify: Fastify, appId: string): Promise<VirtualFS> {
+  const app = await loadAppWithVersion(fastify.db, appId)
+
+  const [draftRow] = await fastify.db
+    .select({ id: appVersions.id, versionNumber: appVersions.versionNumber, sourceFiles: appVersions.sourceFiles, compiledCode: appVersions.compiledCode })
+    .from(appVersions)
+    .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
+    .limit(1)
+  const virtualFiles = new Map<string, string>()
+
+  // Seed default shadcn scaffold components first so the agent can use them without
+  // calling install_shadcn_component. Existing source files loaded below take priority.
+  for (const [path, content] of await loadScaffoldFiles()) {
+    virtualFiles.set(path, content)
+  }
+
+  // Seed with existing source files from the draft version (which always has the latest
+  // files regardless of whether latestVersionNumber has been updated yet).
+  const seedFiles = Array.isArray(draftRow.sourceFiles) && draftRow.sourceFiles.length > 0
+    ? draftRow.sourceFiles
+    : app.sourceFiles
+  if (Array.isArray(seedFiles)) {
+    for (const f of seedFiles as Array<{ path: string; content: string }>) {
+      virtualFiles.set(f.path, f.content)
+    }
+  }
+
+  return new VirtualFS(virtualFiles)
+}
+
 
 function queryAppDb(fastify: Fastify) {
   fastify.post<{
