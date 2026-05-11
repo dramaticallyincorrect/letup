@@ -811,7 +811,19 @@ function buildApp(fastify: Fastify) {
         ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
         onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
         onText: (delta: string) => sendEvent('text', { text: delta }),
-        onToolCall: (name: string, input: unknown, result: unknown) => sendEvent('tool_call', { name, input, result }),
+        onToolCall: (name: string, input: unknown, result: unknown) => {
+          if (name! in [
+            askUserTool.name,
+            appFs.readFileRangeTool.name,
+            appFs.grepFileTool.name,
+            appFs.searchFilesTool.name,
+            appFs.listFilesTool.name,
+            appFs.readFileTool.name,
+          ]) {
+            scheduleProgressiveCompile()
+          }
+          sendEvent('tool_call', { name, input, result })
+        },
         onUsage: async (usage: Anthropic.Usage, model: string, durationSeconds: number) => {
           const mu = tokensToMicroUnits(usage, model)
           await checkAndDeductCredits(fastify.db, userId, mu)
