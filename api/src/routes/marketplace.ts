@@ -45,31 +45,17 @@ function submitApp(fastify: Fastify) {
       if (app.creatorId !== userId) return reply.status(403).send({ error: 'Forbidden' })
 
       const [latestVersion] = await fastify.db
-        .select({ isDraft: appVersions.isDraft })
+        .select({ isDraft: appVersions.isDraft, id: appVersions.id })
         .from(appVersions)
         .where(eq(appVersions.appId, appId))
         .orderBy(desc(appVersions.versionNumber))
         .limit(1)
 
-      if (!latestVersion || latestVersion.isDraft) return reply.status(400).send({ error: 'App must be published before submitting' })
-
-      const existing = await fastify.db
-        .select()
-        .from(marketplaceSubmissions)
-        .where(eq(marketplaceSubmissions.appId, appId))
-
-      if (existing.length > 0) {
-        const [updated] = await fastify.db
-          .update(marketplaceSubmissions)
-          .set({ category, description, status: 'pending', approvedAt: null, updatedAt: new Date() })
-          .where(eq(marketplaceSubmissions.appId, appId))
-          .returning()
-        return reply.status(200).send(updated)
-      }
+      if (!latestVersion || latestVersion.isDraft) return reply.status(400).send({ error: 'Drafts cannot be submitted to marketplace' })
 
       const [submission] = await fastify.db
         .insert(marketplaceSubmissions)
-        .values({ appId, submittedBy: userId, category, description })
+        .values({ appId, versionId: latestVersion.id, submittedBy: userId, category, description })
         .returning()
 
       return reply.status(201).send(submission)
@@ -136,14 +122,14 @@ function approveSubmission(fastify: Fastify) {
       if (existing.length > 0) {
         const [updated] = await fastify.db
           .update(marketplaceListings)
-          .set({ category: submission.category, description: submission.description })
+          .set({ category: submission.category, description: submission.description, appVersionId: submission.versionId })
           .where(eq(marketplaceListings.appId, submission.appId))
           .returning()
         listing = updated
       } else {
         const [inserted] = await fastify.db
           .insert(marketplaceListings)
-          .values({ appId: submission.appId, category: submission.category, description: submission.description })
+          .values({ appId: submission.appId, category: submission.category, description: submission.description, appVersionId: submission.versionId })
           .returning()
         listing = inserted
       }

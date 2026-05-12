@@ -47,7 +47,8 @@ export const userCredits = pgTable('user_credits', {
 
 export const marketplaceSubmissions = pgTable('marketplace_submissions', {
   id: uuid('id').primaryKey().defaultRandom(),
-  appId: uuid('app_id').notNull().unique().references(() => apps.id, { onDelete: 'cascade' }),
+  appId: uuid('app_id').notNull().references(() => apps.id, { onDelete: 'cascade' }),
+  versionId: uuid('version_id').notNull().unique().references(() => appVersions.id, { onDelete: 'cascade' }),
   submittedBy: uuid('submitted_by').notNull().references(() => users.id),
   category: text('category').notNull(),
   description: text('description').notNull(),
@@ -60,6 +61,7 @@ export const marketplaceSubmissions = pgTable('marketplace_submissions', {
 export const marketplaceListings = pgTable('marketplace_listings', {
   id: uuid('id').primaryKey().defaultRandom(),
   appId: uuid('app_id').notNull().unique().references(() => apps.id, { onDelete: 'cascade' }),
+  appVersionId: uuid('app_version_id').notNull().unique().references(() => appVersions.id, { onDelete: 'cascade' }),
   category: text('category').notNull(),
   description: text('description').notNull(),
 })

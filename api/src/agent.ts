@@ -100,7 +100,7 @@ export async function runAgentLoop(params: {
     console.log(`[agent] iteration ${iteration} — sending request`)
 
     const baseParams = {
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       system: system as Anthropic.MessageStreamParams['system'],
       tools: sdkTools.length > 0 ? sdkTools : undefined,
       messages,

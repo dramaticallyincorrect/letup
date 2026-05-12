@@ -6,23 +6,24 @@ a marketplace for user created app
 
 
 1. ~~app builder with file access and install npm modules~~
-2. go through the core workflows and review the code
+2. change title in long conversation lags
+3. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
-3. user database setup in production
-4. github to store versions
-5. plan when and how should apps be deleted, complete removal or always only marked as deleted
-6. marketplace submissions should be against a immutable app_version snapshot
-7. optimize the new phase build system
-8. delete draft
+4. user database setup in production
+5. github to store versions
+6. plan when and how should apps be deleted, complete removal or always only marked as deleted
+7. marketplace submissions should be against a immutable app_version snapshot
+8. optimize the new phase build system
+9. delete draft
 10. install created apps from dashboard
 11. submit updates to marketplace
-13. marketplace
+12. marketplace
    1. show grid of apps
    2. search apps
    3. capture screen shot from the app programaticcly
-14. official apps
+13. official apps
 
 ## check
 

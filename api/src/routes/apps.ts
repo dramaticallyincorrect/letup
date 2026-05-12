@@ -291,7 +291,18 @@ function getApp(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId', {
     schema: { tags: ['apps'], summary: 'Get an app by ID' },
   }, async (request, reply) => {
-    const row = await loadAppWithVersion(fastify.db, request.params.appId)
+    const [row] = await fastify.db
+      .select(APP_VERSION_COLUMNS)
+      .from(apps)
+      .leftJoin(
+        appVersions,
+        and(
+          eq(appVersions.appId, apps.id),
+          eq(appVersions.versionNumber, apps.latestVersionNumber),
+        ),
+      )
+      .where(eq(apps.id, request.params.appId))
+
     if (!row) return reply.code(404).send({ error: 'app not found' })
     return reply.send(row)
   })
@@ -362,6 +373,15 @@ function installApp(fastify: Fastify) {
   }, async (request, reply) => {
     const { appId } = request.params
     const userId = getCurrentUserId()
+
+
+    const [app] = await fastify.db
+      .select({ creatorId: apps.creatorId })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1)
+
+    if (app?.creatorId !== userId) return reply.code(403).send({ error: 'Forbidden' })
 
     const [draftVersion] = await fastify.db
       .select({ id: appVersions.id, versionNumber: appVersions.versionNumber })
@@ -743,7 +763,7 @@ function buildApp(fastify: Fastify) {
         // Compilation failed — still persist source files so "continue" can pick them up
         await fastify.db
           .insert(appVersions)
-          .values({ appId, versionNumber: targetVersionNumber, cssCode, sourceFiles: sourceFilesArray, isDraft: true })
+          .values({ appId, versionNumber: targetVersionNumber, cssCode, sourceFiles: sourceFilesArray, isDraft: true, compiledCode: null })
           .onConflictDoUpdate({
             target: [appVersions.appId, appVersions.versionNumber],
             set: { cssCode, sourceFiles: sourceFilesArray, isDraft: true },

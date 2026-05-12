@@ -399,7 +399,7 @@ export function CreatePageInner({
                     </div>
                     <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
                       <div className="text-[12.5px] text-muted-foreground font-bold mb-1">You</div>
-                      <p className="m-0 font-light  text-sm">{m.content}</p>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                     </div>
                   </div>
                 )
