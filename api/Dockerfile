@@ -19,8 +19,14 @@ COPY api/drizzle ./api/drizzle
 WORKDIR /app/api
 RUN pnpm run build:ts && cp -r src/prompts dist/prompts
 
-# Rebuild native modules explicitly to ensure bindings are compiled
-RUN cd /app && pnpm rebuild better-sqlite3
+# Rebuild better-sqlite3 by resolving its exact path in pnpm's virtual store
+RUN node -e "\
+    const path = require('path'); \
+    const { execSync } = require('child_process'); \
+    const pkgDir = path.dirname(require.resolve('better-sqlite3/package.json')); \
+    console.log('Rebuilding better-sqlite3 at:', pkgDir); \
+    execSync('npx --yes node-gyp rebuild', { cwd: pkgDir, stdio: 'inherit' }); \
+"
 
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/data/apps
