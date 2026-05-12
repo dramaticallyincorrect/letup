@@ -35,6 +35,7 @@ RUN pnpm install --frozen-lockfile --prod
 COPY --from=builder /app/api/dist ./api/dist
 COPY --from=builder /app/api/drizzle ./api/drizzle
 COPY --from=builder /app/api/drizzle.config.ts ./api/drizzle.config.ts
+COPY --from=builder /app/api/src/prompts ./api/dist/prompts
 
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/data/apps
