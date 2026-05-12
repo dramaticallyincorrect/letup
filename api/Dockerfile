@@ -17,7 +17,7 @@ COPY api/tsconfig.json ./api/
 COPY api/drizzle ./api/drizzle
 
 WORKDIR /app/api
-RUN pnpm run build:ts
+RUN pnpm run build:ts && cp -r src/prompts dist/prompts
 
 # Rebuild native modules explicitly to ensure bindings are compiled
 RUN cd /app && pnpm rebuild better-sqlite3
