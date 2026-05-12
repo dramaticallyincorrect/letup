@@ -23,25 +23,21 @@ RUN pnpm run build:ts
 
 FROM node:20-alpine AS runner
 
-RUN apk add --no-cache python3 make g++
-RUN npm install -g pnpm
-
 WORKDIR /app
 
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY api/package.json ./api/
-COPY packages/data/package.json ./packages/data/
-
-RUN pnpm install --frozen-lockfile --prod
-
+# Copy everything from builder — native modules (better-sqlite3) are already compiled
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/api/node_modules ./api/node_modules
 COPY --from=builder /app/api/dist ./api/dist
 COPY --from=builder /app/api/drizzle ./api/drizzle
 COPY --from=builder /app/api/drizzle.config.ts ./api/drizzle.config.ts
 COPY --from=builder /app/api/src/prompts ./api/dist/prompts
+COPY api/package.json ./api/
+COPY pnpm-workspace.yaml package.json ./
 
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/data/apps
 
 EXPOSE 3000
 
-CMD sh -c "cd /app/api && pnpm drizzle-kit migrate --config /app/api/drizzle.config.ts && node /app/api/dist/server.js"
+CMD sh -c "node /app/node_modules/.bin/drizzle-kit migrate --config /app/api/drizzle.config.ts && node /app/api/dist/server.js"
