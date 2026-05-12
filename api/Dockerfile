@@ -30,7 +30,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/api/node_modules ./api/node_modules
 COPY --from=builder /app/api/dist ./api/dist
 COPY --from=builder /app/api/drizzle ./api/drizzle
-COPY --from=builder /app/api/drizzle.config.ts ./api/drizzle.config.ts
+# drizzle.config.ts not needed at runtime — migrations run via migrate.js
 COPY --from=builder /app/api/src/prompts ./api/dist/prompts
 COPY api/package.json ./api/
 COPY pnpm-workspace.yaml package.json ./
@@ -40,4 +40,4 @@ ENV DATA_DIR=/app/data/apps
 
 EXPOSE 3000
 
-CMD sh -c "node /app/node_modules/.bin/drizzle-kit migrate --config /app/api/drizzle.config.ts && node /app/api/dist/server.js"
+CMD sh -c "node /app/api/dist/migrate.js && node /app/api/dist/server.js"
