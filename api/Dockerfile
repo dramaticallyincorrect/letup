@@ -40,4 +40,4 @@ ENV DATA_DIR=/app/data/apps
 
 EXPOSE 3000
 
-CMD ["node", "api/dist/server.js"]
+CMD sh -c "cd /app/api && pnpm db:migrate && node /app/api/dist/server.js"
