@@ -862,6 +862,7 @@ function buildApp(fastify: Fastify) {
 
       // --- Build phase ---
       const buildTools = [
+        askUserTool,
         setupDatabaseTool,
         appFs.strReplaceTool,
         appFs.appendTextTool,
@@ -870,7 +871,6 @@ function buildApp(fastify: Fastify) {
         appFs.grepFileTool,
         appFs.searchFilesTool,
         appFs.listFilesTool,
-        askUserTool,
       ]
 
 
@@ -880,7 +880,16 @@ function buildApp(fastify: Fastify) {
         const planResult = await runAgentLoop({
           effort: 'medium',
           messages: [{ role: 'user', content: userMessage }],
-          tools: buildTools,
+          tools: [
+            askUserTool,
+            appFs.strReplaceTool,
+            appFs.appendTextTool,
+            appFs.readFileTool,
+            appFs.readFileRangeTool,
+            appFs.grepFileTool,
+            appFs.searchFilesTool,
+            appFs.listFilesTool,
+          ],
           system: PLAN_SYSTEM,
           ...sharedAgentParams,
         })
