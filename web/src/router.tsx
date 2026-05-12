@@ -4,7 +4,6 @@ import {
   createRoute,
   Outlet,
 } from '@tanstack/react-router'
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { HomePage } from './apps/home-page'
 import { MarketplacePage } from './apps/marketplace-page'
 import { CreatePage } from './apps/create-page'
@@ -14,12 +13,7 @@ import { DashboardPage } from './apps/dashboard-page'
 import { UsagePage } from './apps/usage-page'
 
 const rootRoute = createRootRoute({
-  component: () => (
-    <>
-      <Outlet />
-      <TanStackRouterDevtools />
-    </>
-  ),
+  component: () => <Outlet />,
 })
 
 const homeRoute = createRoute({

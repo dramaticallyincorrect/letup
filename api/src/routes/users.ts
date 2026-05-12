@@ -59,7 +59,6 @@ function getUserInstalls(fastify: Fastify) {
         appId: apps.id,
         appName: apps.name,
         appDescription: apps.description,
-        appStatus: apps.status,
         latestVersionNumber: apps.latestVersionNumber,
         appCreatedAt: apps.createdAt,
         appUpdatedAt: apps.updatedAt,

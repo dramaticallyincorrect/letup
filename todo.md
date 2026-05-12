@@ -38,6 +38,7 @@ a marketplace for user created app
 2. share app data or component code with other apps
 3. canvas that can host multiple self contained components
 4. shared (between users) database
+5. open apps side by side
 
 ## infra
 

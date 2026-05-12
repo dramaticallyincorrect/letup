@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { mkdirSync, copyFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-const DATA_DIR = join(__dirname, '../../data/apps')
+const DATA_DIR = process.env.DATA_DIR ?? join(__dirname, '../../data/apps')
 const DRAFT_DIR = join(DATA_DIR, 'drafts')
 
 mkdirSync(DATA_DIR, { recursive: true })

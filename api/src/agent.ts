@@ -35,7 +35,7 @@ export function markLastTurnCacheable(messages: Anthropic.MessageParam[]): Anthr
     // Thinking blocks cannot have cache_control — find the last non-thinking block
     let idx = blocks.length - 1
     while (idx >= 0) {
-      const t = (blocks[idx] as Record<string, unknown>).type
+      const t = (blocks[idx] as unknown as Record<string, unknown>).type
       if (t !== 'thinking' && t !== 'redacted_thinking') break
       idx--
     }
@@ -61,8 +61,6 @@ export async function runAgentLoop(params: {
   model?: Model,
   effort: OutputConfig['effort']
   maxTokens?: number
-  /** Enable extended thinking. budget_tokens must be < maxTokens. */
-  thinking?: { budget_tokens: number }
   onText?: (delta: string) => void
   onThinking?: (delta: string) => void
   onToolCall?: (name: string, input: unknown, result: unknown) => void
@@ -74,7 +72,6 @@ export async function runAgentLoop(params: {
     system,
     model = 'claude-sonnet-4-6',
     effort = 'medium',
-    thinking,
     onText,
     onThinking,
     onToolCall,
@@ -109,7 +106,7 @@ export async function runAgentLoop(params: {
     const iterStart = Date.now()
     const stream = anthropic.messages.stream({
       max_tokens: 20_000,
-      ...baseParams, 
+      ...baseParams,
       thinking: {
         type: 'adaptive',
       }, output_config: {
