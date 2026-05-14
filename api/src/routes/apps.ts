@@ -10,7 +10,6 @@ import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls, aiUsageLogs } from '../db/schema'
 import { openDb, openDraftDb, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
-import { getCurrentUserId } from '../currentUser'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
@@ -112,8 +111,8 @@ function sseHeaders(origin?: string) {
 function listApps(fastify: Fastify) {
   fastify.get('/apps', {
     schema: { tags: ['apps'], summary: 'List apps installed by the current user' },
-  }, async (_request, reply) => {
-    const userId = getCurrentUserId()
+  }, async (request, reply) => {
+    const userId = request.assertAuthenticated()
 
     const result = await fastify.db
       .selectDistinct({
@@ -145,7 +144,8 @@ function listApps(fastify: Fastify) {
 function listCreatedApps(fastify: Fastify) {
   fastify.get('/apps/created', {
     schema: { tags: ['apps'], summary: 'List apps created by the current user' },
-  }, async (_request, reply) => {
+  }, async (request, reply) => {
+    const userId = request.assertAuthenticated()
     const maxVersionSq = fastify.db
       .select({ appId: appVersions.appId, maxVersion: max(appVersions.versionNumber).as('max_version') })
       .from(appVersions)
@@ -170,7 +170,7 @@ function listCreatedApps(fastify: Fastify) {
         eq(latestVersionAlias.appId, apps.id),
         eq(latestVersionAlias.versionNumber, maxVersionSq.maxVersion),
       ))
-      .where(eq(apps.creatorId, getCurrentUserId()))
+      .where(eq(apps.creatorId, userId))
       .orderBy(desc(apps.createdAt))
     return reply.send(result)
   })
@@ -242,7 +242,7 @@ function createApp(fastify: Fastify) {
   }, async (request, reply) => {
     const [app] = await fastify.db
       .insert(apps)
-      .values({ name: request.body.name, creatorId: getCurrentUserId() })
+      .values({ name: request.body.name, creatorId: request.assertAuthenticated() })
       .returning()
     await fastify.db
       .insert(appVersions)
@@ -372,7 +372,7 @@ function installApp(fastify: Fastify) {
     schema: { tags: ['apps'], summary: 'Install latest app version and publish it' },
   }, async (request, reply) => {
     const { appId } = request.params
-    const userId = getCurrentUserId()
+    const userId = request.assertAuthenticated()
 
 
     const [app] = await fastify.db
@@ -419,7 +419,7 @@ function uninstallApp(fastify: Fastify) {
     schema: { tags: ['apps'], summary: 'Uninstall an app for the current user' },
   }, async (request, reply) => {
     const { appId } = request.params
-    const userId = getCurrentUserId()
+    const userId = request.assertAuthenticated()
 
     const versionIds = await fastify.db
       .select({ versionId: appVersions.id })
@@ -441,7 +441,7 @@ function deleteDraftApp(fastify: Fastify) {
     schema: { tags: ['apps'], summary: 'Permanently delete a draft app created by the current user' },
   }, async (request, reply) => {
     const { appId } = request.params
-    const userId = getCurrentUserId()
+    const userId = request.assertAuthenticated()
 
     const [app] = await fastify.db
       .select({ id: apps.id, latestVersionNumber: apps.latestVersionNumber, creatorId: apps.creatorId })
@@ -703,7 +703,7 @@ function buildApp(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId, userMessage, model: modelOverride } = request.body
-    const userId = getCurrentUserId()
+    const userId = request.assertAuthenticated()
 
     const app = await loadAppWithVersion(fastify.db, appId)
     if (!app) return reply.code(404).send({ error: 'app not found' })
@@ -1073,7 +1073,7 @@ function getAppUsage(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId } = request.params
-    const userId = getCurrentUserId()
+    const userId = request.assertAuthenticated()
 
     const app = await fastify.db
       .select({ creatorId: apps.creatorId })

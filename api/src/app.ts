@@ -1,11 +1,9 @@
 import { join } from 'node:path'
-import { config } from 'dotenv'
-
-config({ path: join(__dirname, '../.env') })
-config({ path: join(__dirname, '../.env.local'), override: true })
 import AutoLoad, { AutoloadPluginOptions } from '@fastify/autoload'
 import cors from '@fastify/cors'
 import { FastifyPluginAsync, FastifyServerOptions } from 'fastify'
+import authHandler from './plugins/auth-handler'
+import authSession from './plugins/auth-session'
 
 export interface AppOptions extends FastifyServerOptions, Partial<AutoloadPluginOptions> {
 
@@ -18,7 +16,11 @@ const app: FastifyPluginAsync<AppOptions> = async (
   fastify,
   opts
 ): Promise<void> => {
-  await fastify.register(cors, { origin: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] })
+  await fastify.register(cors, {
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  })
 
   // Do not touch the following lines
 
@@ -28,8 +30,13 @@ const app: FastifyPluginAsync<AppOptions> = async (
   // eslint-disable-next-line no-void
   void fastify.register(AutoLoad, {
     dir: join(__dirname, 'plugins'),
+    ignorePattern: /auth-(handler|session)/,
     options: opts
   })
+
+  // Auth plugins registered explicitly after AutoLoad so db is ready first
+  void fastify.register(authHandler)
+  void fastify.register(authSession)
 
   // This loads all plugins defined in routes
   // define your routes in one of these

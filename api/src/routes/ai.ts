@@ -1,7 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { Fastify } from "../fastify_type";
 import Anthropic from "@anthropic-ai/sdk";
-import { getCurrentUserId } from "../currentUser";
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from "../credits";
 
 const aiRoute: FastifyPluginAsync = async (fastify) => {
@@ -25,7 +24,7 @@ function generateAi(fastify: Fastify) {
         },
     }, async (request, reply) => {
         const { prompt, system, model = 'claude-haiku-4-5' } = request.body
-        const userId = getCurrentUserId()
+        const userId = request.assertAuthenticated()
 
         if (!(await hasCredits(fastify.db, userId))) {
             return reply.code(402).send({ error: 'Insufficient credits' })

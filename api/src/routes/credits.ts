@@ -1,7 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { Fastify } from '../fastify_type'
-import { getCurrentUserId } from '../currentUser'
 import { userCredits } from '../db/schema'
 
 const creditsPlugin: FastifyPluginAsync = async (fastify) => {
@@ -15,8 +14,8 @@ function getCredits(fastify: Fastify) {
       tags: ['credits'],
       summary: 'Get credit balance for the current user',
     },
-  }, async (_request, reply) => {
-    const userId = getCurrentUserId()
+  }, async (request, reply) => {
+    const userId = request.assertAuthenticated()
     const result = await fastify.db.execute(sql`
       SELECT balance FROM user_credits WHERE user_id = ${userId}
     `)
@@ -41,7 +40,7 @@ function grantCredits(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
-    const userId = request.body.userId ?? getCurrentUserId()
+    const userId = request.body.userId ?? request.assertAuthenticated()
     const amount = BigInt(Math.floor(request.body.amount))
 
     await fastify.db

@@ -1,0 +1,110 @@
+-- Create Better Auth tables (not previously tracked)
+CREATE TABLE "user" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"name" text NOT NULL,
+	"email" text NOT NULL,
+	"email_verified" boolean DEFAULT false NOT NULL,
+	"handle" text NOT NULL,
+	"display_name" text NOT NULL,
+	"image" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_email_unique" UNIQUE("email"),
+	CONSTRAINT "user_handle_unique" UNIQUE("handle")
+);
+--> statement-breakpoint
+CREATE TABLE "session" (
+	"id" text PRIMARY KEY NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"token" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp NOT NULL,
+	"ip_address" text,
+	"user_agent" text,
+	"user_id" uuid NOT NULL,
+	CONSTRAINT "session_token_unique" UNIQUE("token")
+);
+--> statement-breakpoint
+CREATE TABLE "account" (
+	"id" text PRIMARY KEY NOT NULL,
+	"account_id" text NOT NULL,
+	"provider_id" text NOT NULL,
+	"user_id" uuid NOT NULL,
+	"access_token" text,
+	"refresh_token" text,
+	"id_token" text,
+	"access_token_expires_at" timestamp,
+	"refresh_token_expires_at" timestamp,
+	"scope" text,
+	"password" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "verification" (
+	"id" text PRIMARY KEY NOT NULL,
+	"identifier" text NOT NULL,
+	"value" text NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+-- Drop old FK constraints referencing users (actual constraint names in DB)
+ALTER TABLE "ai_usage_logs" DROP CONSTRAINT "ai_usage_logs_user_id_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "user_credits" DROP CONSTRAINT "user_credits_user_id_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "marketplace_submissions" DROP CONSTRAINT "marketplace_submissions_submitted_by_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "user_app_installs" DROP CONSTRAINT "user_app_installs_user_id_fkey";
+--> statement-breakpoint
+ALTER TABLE "apps" DROP CONSTRAINT "apps_creator_id_fkey";
+--> statement-breakpoint
+-- Drop old users table
+ALTER TABLE "users" DISABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+DROP TABLE "users" CASCADE;
+--> statement-breakpoint
+-- Add missing columns to existing marketplace tables
+ALTER TABLE "marketplace_listings" ADD COLUMN "app_version_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "marketplace_submissions" ADD COLUMN "version_id" uuid;
+--> statement-breakpoint
+-- Add unique constraints on new columns
+ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_unique" UNIQUE("app_version_id");
+--> statement-breakpoint
+ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_unique" UNIQUE("version_id");
+--> statement-breakpoint
+-- Add FK from marketplace tables to app_versions
+ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_app_versions_id_fk" FOREIGN KEY ("version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+-- Add new FK constraints pointing to user table (NOT VALID skips check on orphaned rows from old users table)
+ALTER TABLE "ai_usage_logs" ADD CONSTRAINT "ai_usage_logs_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "ai_usage_logs" ADD CONSTRAINT "ai_usage_logs_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE set null ON UPDATE no action NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "apps" ADD CONSTRAINT "apps_creator_id_user_id_fk" FOREIGN KEY ("creator_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "user_app_installs" ADD CONSTRAINT "user_app_installs_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "user_credits" ADD CONSTRAINT "user_credits_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_submitted_by_user_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+CREATE INDEX "account_userId_idx" ON "account" USING btree ("user_id");
+--> statement-breakpoint
+CREATE INDEX "session_userId_idx" ON "session" USING btree ("user_id");
+--> statement-breakpoint
+CREATE INDEX "verification_identifier_idx" ON "verification" USING btree ("identifier");
+--> statement-breakpoint
+-- Drop apps.status column and app_status enum
+ALTER TABLE "apps" DROP COLUMN "status";
+--> statement-breakpoint
+DROP TYPE "public"."app_status";

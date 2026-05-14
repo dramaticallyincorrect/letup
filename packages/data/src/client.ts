@@ -3,6 +3,7 @@ const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${baseUrl}${path}`, {
     headers: { ...init?.headers },
+    credentials: 'include',
     ...init,
   })
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`)
@@ -38,6 +39,7 @@ export type AppDetail = App & {
 
 export type User = {
   id: string
+  email: string
   handle: string
   displayName: string
   createdAt: string
@@ -121,6 +123,7 @@ export function buildApp(appId: string, userMessage: string): Promise<Response> 
   return fetch(`${baseUrl}/apps/build`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ appId, userMessage }),
   })
 }
@@ -170,12 +173,7 @@ export async function getAppUsage(appId: string): Promise<AppVersionUsage[]> {
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 export async function getUser(userId: string): Promise<User> {
-  const res = await apiFetch(`/users/${userId}`)
-  return res.json()
-}
-
-export async function getUserInstalls(userId: string): Promise<UserAppInstall[]> {
-  const res = await apiFetch(`/users/${userId}/installs`)
+  const res = await apiFetch(`/me`)
   return res.json()
 }
 

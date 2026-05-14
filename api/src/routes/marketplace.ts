@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { eq, desc, sql, and } from 'drizzle-orm'
-import { apps, users, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats } from '../db/schema'
-import { getCurrentUserId } from '../currentUser'
+import { apps, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats } from '../db/schema'
+import { user as users } from '../db/auth-schema'
 import { Fastify } from '../fastify_type'
 
 const marketplacePlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
@@ -34,7 +34,7 @@ function submitApp(fastify: Fastify) {
     async (request, reply) => {
       const { appId } = request.params
       const { category, description } = request.body
-      const userId = getCurrentUserId()
+      const userId = request.assertAuthenticated()
 
       const [app] = await fastify.db
         .select({ id: apps.id, creatorId: apps.creatorId })
@@ -202,7 +202,7 @@ function installMarketplaceListing(fastify: Fastify) {
 
       if (!latestVersion) return reply.status(400).send({ error: 'App has no published version' })
 
-      const userId = getCurrentUserId()
+      const userId = request.assertAuthenticated()
 
       await fastify.db
         .insert(userAppInstalls)
