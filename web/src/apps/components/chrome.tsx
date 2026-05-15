@@ -14,7 +14,7 @@ export function Chrome({ active }: Props) {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-xl font-sans" style={{ backdropFilter: 'blur(20px) saturate(140%)' }}>
       <div className="max-w-7xl mx-auto px-8 py-4 flex items-center gap-6">
-        <Link to="/" className="flex items-center gap-2.5 font-bold text-[17px] tracking-[-0.015em] text-foreground no-underline">
+        <Link to="/home" className="flex items-center gap-2.5 font-bold text-[17px] tracking-[-0.015em] text-foreground no-underline">
           <span
             className="size-6.5 rounded-lg grid place-items-center text-sm font-bold text-white"
             style={{ background: 'var(--accent)' }}
@@ -26,7 +26,7 @@ export function Chrome({ active }: Props) {
 
         <nav className="flex gap-0.5 ml-2">
           <Link
-            to="/"
+            to="/home"
             className={cn(
               'px-3.5 py-1.75 rounded-full text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors no-underline',
               active === 'library' && 'text-foreground bg-secondary',

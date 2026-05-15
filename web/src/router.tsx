@@ -5,6 +5,7 @@ import {
   Outlet,
 } from '@tanstack/react-router'
 import { HomePage } from './apps/home-page'
+import { LandingPage } from './apps/landing-page'
 import { MarketplacePage } from './apps/marketplace-page'
 import { CreatePage } from './apps/create-page'
 import { EditPage } from './apps/edit-page'
@@ -18,9 +19,15 @@ const rootRoute = createRootRoute({
   component: () => <Outlet />,
 })
 
-const homeRoute = createRoute({
+const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  component: LandingPage,
+})
+
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/home',
   component: HomePage,
 })
 
@@ -73,6 +80,7 @@ const loginRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
+  landingRoute,
   homeRoute,
   marketplaceRoute,
   createRoute_,

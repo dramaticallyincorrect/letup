@@ -211,4 +211,15 @@
     to   { opacity: 1; transform: translateY(0); }
   }
   .animate-activity-in { animation: activity-in 0.18s ease-out forwards; }
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .animate-marquee {
+    animation: marquee 32s linear infinite;
+  }
+  .animate-marquee:hover {
+    animation-play-state: paused;
+  }
 }

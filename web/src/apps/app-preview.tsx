@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import * as ReactDOM from 'react-dom'
+import * as ReactDOMClient from 'react-dom/client'
 import * as ReactJSXRuntime from 'react/jsx-runtime'
 import * as FramerMotion from 'framer-motion'
 import * as RadixUI from 'radix-ui'
@@ -151,6 +153,8 @@ export function AppPreview({
       const req = (name: string) => {
         if (name === 'react') return React
         if (name === 'react/jsx-runtime') return ReactJSXRuntime
+        if (name === 'react-dom') return ReactDOM
+        if (name === 'react-dom/client') return ReactDOMClient
         if (name === 'router') return routerModule
         if (name === 'db') return {
           query: (sql: string, params?: unknown[]) => appId ? queryAppDb(appId, sql, params, draft) : Promise.reject(new Error('No appId')),

@@ -69,4 +69,4 @@ dist
 # local env
 .env.local
 
-data
+data/**

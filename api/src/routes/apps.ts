@@ -105,6 +105,7 @@ function sseHeaders(origin?: string) {
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
     'Access-Control-Allow-Origin': origin ?? '*',
+    'Access-Control-Allow-Credentials': 'true',
   }
 }
 
@@ -513,7 +514,7 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
     jsx: 'automatic',
     target: 'es2020',
     external: [
-      'react', 'react/jsx-runtime', 'framer-motion',
+      'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', 'framer-motion',
       'radix-ui', 'lucide-react',
       'class-variance-authority', 'tailwind-merge',
       'ai', 'db',
@@ -575,6 +576,12 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
                 return { path: 'react/jsx-runtime', external: true }
               }
               return { path: 'react', external: true }
+            }
+            if (/esm\.sh\/(react-dom)(@|\?|\/|$)/.test(resolved)) {
+              if (/\/client/.test(resolved)) {
+                return { path: 'react-dom/client', external: true }
+              }
+              return { path: 'react-dom', external: true }
             }
             return { path: resolved, namespace: 'esm-sh' }
           })

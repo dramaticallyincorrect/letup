@@ -5,25 +5,23 @@ a marketplace for user created app
 ## v1
 
 
-1. ~~app builder with file access and install npm modules~~
-2. change title in long conversation lags
-3. go through the core workflows and review the code
+1. change title in long conversation lags
+2. payment setup
+   1. free account
+      1. 10 credits = 1.5$
+      2. 1 app
+   2. pro account
+      1. 50 credits = 7.5$
+      2. unlimited apps
+3. credit
+   1. show credits remaining when credit is low
+   2. credit top up
+4. landing page
+5. optimize the new phase build system
+6.  go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
-4. user database setup in production
-5. github to store versions
-6. plan when and how should apps be deleted, complete removal or always only marked as deleted
-7. marketplace submissions should be against a immutable app_version snapshot
-8. optimize the new phase build system
-9. delete draft
-10. install created apps from dashboard
-11. submit updates to marketplace
-12. marketplace
-   1. show grid of apps
-   2. search apps
-   3. capture screen shot from the app programaticcly
-13. official apps
 
 ## check
 
@@ -39,14 +37,12 @@ a marketplace for user created app
 3. canvas that can host multiple self contained components
 4. shared (between users) database
 5. open apps side by side
+6. install created apps from dashboard
+11. submit updates to marketplace
+12. github to store versions
+10. plan when and how should apps be deleted, complete removal or always only marked as deleted
+11. official apps
 
-## infra
-
-1. signing
-   1. sign in
-   2. sign up
-2. payment
-3. add credit payment
 
 
 # security consideration

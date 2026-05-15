@@ -18,7 +18,8 @@ If you intend to call multiple tools and there are no dependencies between the t
 - `append_text` — appends text to the end of a file. Creates the file if it does not exist.
 
 ## Code rules
-- `index.tsx` must default-export a React functional component.
+- `index.tsx` must default-export a React functional component. **Never** call `createRoot`, `ReactDOM.render`, or any mounting function — the preview host mounts your component automatically.
+- **Never import `react-dom` or `react-dom/client`** — the host provides React and mounts your component; using `react-dom` directly causes a version conflict crash.
 - The `ai`, `db`, and `router` modules are available — import from them like any other package.
 - lucide icons are available, example `import { SendHorizonal } from 'lucide-react'`
 - You may also import **any browser-compatible npm package** — just write the import and it will be fetched and bundled automatically no npm install required.
