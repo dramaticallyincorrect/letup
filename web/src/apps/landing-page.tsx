@@ -1,8 +1,9 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { CheckIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/lib/auth-client'
 
 const SHOWCASE_APPS = [
   { g: '📝', name: 'Meeting Notes', desc: 'Summarize and extract action items', tint: 'indigo' },
@@ -26,7 +27,7 @@ const FREE_FEATURES = [
 ]
 
 const PRO_FEATURES = [
-  '50 Claude credits / month',
+  '100 Claude credits / month',
   'Unlimited apps',
   'Publish to the marketplace',
   'Priority support',
@@ -290,6 +291,7 @@ function PricingCard({
   features,
   featured,
   ctaLabel,
+  onCtaClick,
 }: {
   label: string
   amount: string
@@ -298,6 +300,7 @@ function PricingCard({
   features: string[]
   featured?: boolean
   ctaLabel: string
+  onCtaClick?: () => void
 }) {
   return (
     <Card
@@ -373,14 +376,15 @@ function PricingCard({
         <div className="flex-1 min-h-5" />
 
         <Button
-          asChild
           className={`mt-7 h-12 rounded-full font-bold text-sm w-full ${featured
             ? 'bg-background text-foreground hover:bg-background/90 shadow-[0_2px_8px_oklch(0.165_0.018_68/0.08)]'
             : 'bg-secondary text-foreground border border-input hover:bg-secondary/80'
             }`}
           variant="ghost"
+          onClick={onCtaClick}
+          asChild={!onCtaClick}
         >
-          <Link to="/signup">{ctaLabel}</Link>
+          {onCtaClick ? ctaLabel : <Link to="/signup">{ctaLabel}</Link>}
         </Button>
       </CardContent>
     </Card>
@@ -388,6 +392,18 @@ function PricingCard({
 }
 
 function PricingSection() {
+  const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
+  const navigate = useNavigate()
+
+  const goToCheckout = () => {
+    if (isLoggedIn) {
+      navigate({ to: '/payment' })
+    } else {
+      navigate({ to: '/signup', search: { next: '/payment' } as never })
+    }
+  }
+
   return (
     <section id="pricing" className="py-24 px-10 bg-background">
       <div className="max-w-6xl mx-auto">
@@ -423,6 +439,7 @@ function PricingSection() {
             features={PRO_FEATURES}
             featured
             ctaLabel="Get Pro"
+            onCtaClick={goToCheckout}
           />
         </div>
       </div>

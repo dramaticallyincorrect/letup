@@ -84,3 +84,16 @@ export const aiUsageLogs = pgTable('ai_usage_logs', {
   durationSeconds: real('duration_seconds'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
+
+export const subscriptionEnum = pgEnum('subscription', ['free', 'pro'])
+
+export const userSubscriptions = pgTable('user_subscriptions', {
+  userId: text('user_id').primaryKey().references(() => user.id),
+  plan: subscriptionEnum('plan').notNull().default('free'),           // 'free' | 'premium'
+  paddleCustomerId: text('paddle_customer_id'),
+  paddleSubscriptionId: text('paddle_subscription_id'),
+  status: text('status').notNull().default('active'),      // 'active' | 'canceled' | 'past_due'
+  currentPeriodEnd: timestamp('current_period_end'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});

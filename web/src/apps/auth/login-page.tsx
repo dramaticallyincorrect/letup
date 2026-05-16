@@ -1,12 +1,20 @@
 import { useState } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { signIn } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+const ALLOWED_NEXT = new Set(['/payment'])
+
+function resolveNext(raw: unknown): '/' | '/payment' {
+  return typeof raw === 'string' && ALLOWED_NEXT.has(raw) ? (raw as '/payment') : '/'
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
+  const search = useSearch({ strict: false }) as { next?: string }
+  const next = resolveNext(search.next)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +31,7 @@ export function LoginPage() {
         setError(error.message ?? 'Sign in failed')
         return
       }
-      navigate({ to: '/' })
+      navigate({ to: next })
     } catch (err) {
       setError('An unexpected error occurred. Please try again.')
       setLoading(false)
@@ -31,11 +39,11 @@ export function LoginPage() {
   }
 
   async function handleGoogle() {
-    await signIn.social({ provider: 'google', callbackURL: '/' })
+    await signIn.social({ provider: 'google', callbackURL: next })
   }
 
   async function handleGitHub() {
-    await signIn.social({ provider: 'github', callbackURL: '/' })
+    await signIn.social({ provider: 'github', callbackURL: next })
   }
 
   return (
@@ -121,7 +129,11 @@ export function LoginPage() {
       {/* Sign up link */}
       <p className="mt-6 text-[13.5px] text-muted-foreground">
         Don't have an account?{' '}
-        <Link to="/signup" className="text-foreground font-medium underline underline-offset-2">
+        <Link
+          to="/signup"
+          search={next === '/' ? undefined : ({ next } as never)}
+          className="text-foreground font-medium underline underline-offset-2"
+        >
           Sign up
         </Link>
       </p>

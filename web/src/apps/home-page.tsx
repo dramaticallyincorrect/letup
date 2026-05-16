@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react'
+import { MoreHorizontal, PlusIcon, SearchIcon, SparklesIcon } from 'lucide-react'
 import { Chrome } from './components/chrome'
 import { AppIcon } from './components/app-icon'
 import { Modal } from './components/modal'
@@ -21,16 +21,29 @@ import {
   widgetToAppCard,
   type AppCard,
 } from './data'
+import { useSession } from '@/lib/auth-client'
 
 export function HomePage() {
   const [category, setCategory] = useState('All')
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState<string | null>(null)
 
+  const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
+
   const { data: widgets = [], isPending } = useQuery({
     queryKey: ['widgets'],
     queryFn: client.getApps,
   })
+
+  const { data: billing } = useQuery({
+    queryKey: ['billing-status'],
+    queryFn: client.getBillingStatus,
+    enabled: isLoggedIn,
+    retry: false,
+  })
+
+  const showUpgradeBanner = billing?.plan === 'free'
 
   const myApps = useMemo(() => widgets.map(widgetToAppCard), [widgets])
 
@@ -85,6 +98,7 @@ export function HomePage() {
           </label>
         </div>
 
+        {showUpgradeBanner && <UpgradeBanner />}
         <LibraryView apps={filteredMine} loading={isPending} onToast={setToast} />
       </main>
 
@@ -185,6 +199,34 @@ function LibraryView({
         </p>
       </Modal>
     </>
+  )
+}
+
+function UpgradeBanner() {
+  const navigate = useNavigate()
+
+  return (
+    <div className="flex items-center gap-4 mb-6 px-5 py-4 rounded-2xl border border-border bg-secondary/60">
+      <div
+        className="size-9 rounded-xl grid place-items-center shrink-0"
+        style={{ background: 'var(--tint-amber-bg)', color: 'var(--tint-amber-fg)' }}
+      >
+        <SparklesIcon size={16} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-foreground m-0">Free plan · 1 app limit</p>
+        <p className="text-xs text-muted-foreground m-0 mt-0.5">
+          Upgrade to Pro for unlimited apps and 100 credits / month.
+        </p>
+      </div>
+      <Button
+        size="sm"
+        className="rounded-full font-semibold shrink-0"
+        onClick={() => navigate({ to: '/payment' })}
+      >
+        Upgrade to Pro
+      </Button>
+    </div>
   )
 }
 

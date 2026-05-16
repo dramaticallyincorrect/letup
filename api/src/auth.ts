@@ -2,6 +2,9 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from './db'
 import { user, session, account, verification, userRelations } from './db/auth-schema'
+import { userCredits, userSubscriptions } from './db/schema'
+
+const FREE_CREDITS_MICRO_UNITS = 125_000_000n // 10 credits × 12,500,000 mu/credit
 
 export const auth = betterAuth({
     database: drizzleAdapter(db, {
@@ -22,4 +25,24 @@ export const auth = betterAuth({
         },
     },
     trustedOrigins: [process.env.FRONTEND_URL ?? 'http://localhost:5173'],
+    databaseHooks: {
+        user: {
+            create: {
+                after: async (newUser) => {
+                    await Promise.all([
+                        db.insert(userCredits).values({
+                            userId: newUser.id,
+                            balance: FREE_CREDITS_MICRO_UNITS,
+                            updatedAt: new Date(),
+                        }).onConflictDoNothing(),
+                        db.insert(userSubscriptions).values({
+                            userId: newUser.id,
+                            plan: 'free',
+                            status: 'active',
+                        }).onConflictDoNothing(),
+                    ])
+                },
+            },
+        },
+    },
 });

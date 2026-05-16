@@ -6,22 +6,22 @@ a marketplace for user created app
 
 
 1. change title in long conversation lags
-2. payment setup
-   1. free account
-      1. 10 credits = 1.5$
-      2. 1 app
-   2. pro account
-      1. 50 credits = 7.5$
-      2. unlimited apps
-3. credit
+2. logged out -> sign up for premium
+3. logged in -> upgrade to premium
+4. account
+   1. remaining credit
+   2. cancel subscription
+5. credit
    1. show credits remaining when credit is low
    2. credit top up
-4. landing page
-5. optimize the new phase build system
-6.  go through the core workflows and review the code
+6. ~~landing page~~
+7. optimize the new phase build system
+8.  go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
+9.  share console logs with ai
+   1. in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai
 
 ## check
 

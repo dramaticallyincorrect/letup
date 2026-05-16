@@ -1,6 +1,3 @@
-
-
-
 ## web package rules
 
 1. always use measurements like w-4, do not use exact pixels ie w-[4px]

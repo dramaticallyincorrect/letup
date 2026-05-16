@@ -170,6 +170,21 @@ export async function getAppUsage(appId: string): Promise<AppVersionUsage[]> {
   return res.json()
 }
 
+// ── Billing ───────────────────────────────────────────────────────────────────
+
+export type BillingStatus = {
+  plan: 'free' | 'pro'
+  status: string
+  currentPeriodEnd: string | null
+  credits: number
+  microUnitsBalance: string
+}
+
+export async function getBillingStatus(): Promise<BillingStatus> {
+  const res = await apiFetch('/billing/status')
+  return res.json()
+}
+
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 export async function getUser(userId: string): Promise<User> {
