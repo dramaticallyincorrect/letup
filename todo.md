@@ -6,11 +6,9 @@ a marketplace for user created app
 
 
 1. change title in long conversation lags
-2. logged out -> sign up for premium
-3. logged in -> upgrade to premium
-4. account
-   1. remaining credit
-   2. cancel subscription
+2. ~~logged out -> sign up for premium~~
+3. ~~logged in -> upgrade to premium~~
+4. ~~account~~
 5. credit
    1. show credits remaining when credit is low
    2. credit top up

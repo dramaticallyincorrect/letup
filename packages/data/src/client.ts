@@ -185,6 +185,11 @@ export async function getBillingStatus(): Promise<BillingStatus> {
   return res.json()
 }
 
+export async function getBillingPortalUrl(): Promise<{ url: string }> {
+  const res = await apiFetch('/billing/portal')
+  return res.json()
+}
+
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 export async function getUser(userId: string): Promise<User> {

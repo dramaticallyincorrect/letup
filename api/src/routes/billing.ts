@@ -15,6 +15,7 @@ const paddle = new Paddle(process.env.PADDLE_API_KEY!, {
 
 const billingPlugin: FastifyPluginAsync = async (fastify) => {
   getBillingStatus(fastify as Fastify)
+  getBillingPortal(fastify as Fastify)
   void fastify.register(webhookPlugin)
 }
 
@@ -41,6 +42,32 @@ function getBillingStatus(fastify: Fastify) {
       credits,
       microUnitsBalance,
     })
+  })
+}
+
+function getBillingPortal(fastify: Fastify) {
+  fastify.get('/billing/portal', async (request, reply) => {
+    const userId = request.assertAuthenticated()
+
+    const [subscription] = await fastify.db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId))
+
+    if (!subscription?.paddleCustomerId) {
+      return reply.status(404).send({ error: 'No active subscription' })
+    }
+
+    const subscriptionIds = subscription.paddleSubscriptionId
+      ? [subscription.paddleSubscriptionId]
+      : []
+
+    const session = await paddle.customerPortalSessions.create(
+      subscription.paddleCustomerId,
+      subscriptionIds,
+    )
+
+    return reply.send({ url: session.urls.general.overview })
   })
 }
 

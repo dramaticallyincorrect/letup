@@ -15,6 +15,7 @@ import { UsagePage } from './apps/usage-page'
 import { SignupPage } from './apps/auth/signup-page'
 import { LoginPage } from './apps/auth/login-page'
 import { PaymentPage } from './apps/payment-page'
+import { AccountPage } from './apps/account-page'
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -86,6 +87,12 @@ const paymentRoute = createRoute({
   component: PaymentPage,
 })
 
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account',
+  component: AccountPage,
+})
+
 const routeTree = rootRoute.addChildren([
   landingRoute,
   homeRoute,
@@ -98,6 +105,7 @@ const routeTree = rootRoute.addChildren([
   signupRoute,
   loginRoute,
   paymentRoute,
+  accountRoute,
 ])
 
 export const router = createRouter({

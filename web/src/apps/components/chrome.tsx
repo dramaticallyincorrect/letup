@@ -5,7 +5,7 @@ import { TINT_STYLES } from './app-icon'
 import { PlusIcon } from 'lucide-react'
 
 type Props = {
-  active: 'library' | 'marketplace' | 'create' | 'dashboard'
+  active: 'library' | 'marketplace' | 'dashboard'
   search?: string
   onSearch?: (v: string) => void
 }
@@ -52,15 +52,6 @@ export function Chrome({ active }: Props) {
           >
             Dashboard
           </Link>
-          <Link
-            to="/create"
-            className={cn(
-              'px-3.5 py-1.75 rounded-full text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors no-underline',
-              active === 'create' && 'text-foreground bg-secondary',
-            )}
-          >
-            Create
-          </Link>
         </nav>
 
         <div className="flex-1" />
@@ -71,13 +62,14 @@ export function Chrome({ active }: Props) {
           </Link>
         </Button>
 
-        <div
-          className="size-8 rounded-full grid place-items-center font-bold text-xs shrink-0"
+        <Link
+          to="/account"
+          className="size-8 rounded-full grid place-items-center font-bold text-xs shrink-0 no-underline hover:opacity-80 transition-opacity"
           style={TINT_STYLES.coral}
-          title="You"
+          title="Account"
         >
           You
-        </div>
+        </Link>
       </div>
     </header>
   )
