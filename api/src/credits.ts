@@ -41,8 +41,11 @@ export class InsufficientCreditsError extends Error {
 
 // Atomically deducts microUnits from the user's balance.
 // Throws InsufficientCreditsError if balance < microUnits or no row exists.
-export async function checkAndDeductCredits(db: DB, userId: string, microUnits: bigint): Promise<void> {
-  if (microUnits <= 0n) return
+export async function checkAndDeductCredits(db: DB, userId: string, microUnits: bigint): Promise<bigint> {
+  if (microUnits <= 0n) {
+    const row = await db.execute(sql`SELECT balance FROM user_credits WHERE user_id = ${userId}`)
+    return BigInt((row[0]?.balance as string | number | bigint | undefined) ?? 0)
+  }
   const result = await db.execute(sql`
     UPDATE user_credits
     SET balance = balance - ${microUnits}, updated_at = now()
@@ -52,6 +55,7 @@ export async function checkAndDeductCredits(db: DB, userId: string, microUnits: 
   if (result.length === 0) {
     throw new InsufficientCreditsError()
   }
+  return BigInt(result[0].balance as string | number | bigint)
 }
 
 // Returns true if the user has any credit balance > 0.

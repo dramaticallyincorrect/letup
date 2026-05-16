@@ -738,6 +738,8 @@ function buildApp(fastify: Fastify) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
 
+    let lowCreditsEmitted = false
+
     const appFs = await getAppFs(fastify, appId)
 
 
@@ -853,8 +855,15 @@ function buildApp(fastify: Fastify) {
         },
         onUsage: async (usage: Anthropic.Usage, model: string, durationSeconds: number) => {
           const mu = tokensToMicroUnits(usage, model)
-          await checkAndDeductCredits(fastify.db, userId, mu)
+          const newBalance = await checkAndDeductCredits(fastify.db, userId, mu)
           await logUsage(fastify.db, userId, 'build', model, usage, mu, draftVersionId, userMessage, buildSessionId, durationSeconds)
+          if (!lowCreditsEmitted) {
+            const credits = Math.floor(Number(newBalance) / 12_500_000)
+            if (credits <= 5) {
+              lowCreditsEmitted = true
+              sendEvent('low_credits', { credits })
+            }
+          }
         },
       }
 

@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as client from '@repo/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Alert } from '@/components/ui/alert'
 import { AppIcon } from './components/app-icon'
 import { AppPreview } from './app-preview'
 import { getAppGlyph, getAppTint } from './data'
-import { SendHorizonal } from 'lucide-react'
+import { SendHorizonal, AlertTriangle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ErrorBoundary } from 'react-error-boundary'
@@ -122,6 +124,7 @@ export function CreatePageInner({
   initialCssCode = null,
 }: CreatePageInnerProps = {}) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [widgetId, setWidgetId] = useState<string | null>(initialWidgetId ?? null)
   const [appName, setAppName] = useState(initialAppName)
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
@@ -131,6 +134,16 @@ export function CreatePageInner({
   const [currentActivity, setCurrentActivity] = useState<string | null>(null)
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
   const [initError, setInitError] = useState<string | null>(null)
+  const [lowCreditsBalance, setLowCreditsBalance] = useState<number | null>(null)
+
+  const { data: billing } = useQuery({
+    queryKey: ['billing-status'],
+    queryFn: client.getBillingStatus,
+    retry: false,
+  })
+  const effectiveCredits =
+    lowCreditsBalance !== null ? lowCreditsBalance : billing?.credits ?? null
+  const lowCredits = effectiveCredits !== null && effectiveCredits <= 5
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -266,7 +279,11 @@ export function CreatePageInner({
               : m
             )
           )
+        } else if (event === 'low_credits') {
+          const { credits } = data as { credits: number }
+          setLowCreditsBalance(credits)
         } else if (event === 'error') {
+          queryClient.invalidateQueries({ queryKey: ['billing-status'] })
           setMessages(prev => {
             const next = [...prev]
             const last = next[next.length - 1]
@@ -280,6 +297,7 @@ export function CreatePageInner({
             return next
           })
         } else if (event === 'done') {
+          queryClient.invalidateQueries({ queryKey: ['billing-status'] })
           setMessages(prev => {
             const next = [...prev]
             const last = next[next.length - 1]
@@ -291,6 +309,7 @@ export function CreatePageInner({
         }
       }
     } catch (err) {
+      queryClient.invalidateQueries({ queryKey: ['billing-status'] })
       setMessages(prev => {
         const next = [...prev]
         const last = next[next.length - 1]
@@ -551,6 +570,26 @@ export function CreatePageInner({
 
             <div ref={messagesEndRef} />
           </div>
+
+          {lowCredits && (
+            <div className="px-5 pt-3 shrink-0">
+              <Alert
+                variant="destructive"
+                className="flex items-center gap-2 py-2 px-3 [&>svg]:translate-y-0"
+              >
+                <AlertTriangle className="size-4 shrink-0" />
+                <div className="flex-1 min-w-0 flex items-center gap-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis text-destructive">
+                  <span className="font-medium">Low credits:</span>
+                  <span>{effectiveCredits} left.</span>
+                  {billing?.plan === 'free' && (
+                    <Link to="/account" className="underline font-medium ml-auto">
+                      Upgrade
+                    </Link>
+                  )}
+                </div>
+              </Alert>
+            </div>
+          )}
 
           {/* Chat composer */}
           <ChatComposer
