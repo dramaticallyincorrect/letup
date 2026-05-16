@@ -731,8 +731,15 @@ function buildApp(fastify: Fastify) {
     const draftVersionId = draftRow.id
     const buildSessionId = randomUUID()
 
+    const ac = new AbortController()
+    const sessionQuestionIds = new Set<string>()
+
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
+
+    request.raw.on('close', () => {
+      if (!ac.signal.aborted) ac.abort()
+    })
 
     function sendEvent(event: string, data: unknown) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -816,8 +823,15 @@ function buildApp(fastify: Fastify) {
       },
       handler: async (input: Record<string, unknown>) => {
         const questionId = crypto.randomUUID()
-        const answer = await new Promise<string>(resolve => {
+        sessionQuestionIds.add(questionId)
+        const answer = await new Promise<string>((resolve, reject) => {
           pendingQuestions.set(questionId, resolve)
+          const onAbort = () => {
+            pendingQuestions.delete(questionId)
+            reject(ac.signal.reason ?? new DOMException('Aborted', 'AbortError'))
+          }
+          if (ac.signal.aborted) return onAbort()
+          ac.signal.addEventListener('abort', onAbort, { once: true })
           sendEvent('user_question', {
             questionId,
             question: input.question as string,
@@ -828,16 +842,20 @@ function buildApp(fastify: Fastify) {
       },
     }
 
+    async function saveProgress(msgs: Anthropic.MessageParam[]) {
+      await fastify.db
+        .update(apps)
+        .set({ conversationHistory: stripCacheControl(msgs) as unknown[], updatedAt: new Date() })
+        .where(eq(apps.id, appId))
+    }
+
+    let buildMessages: Anthropic.MessageParam[] = messages
+
     try {
-      async function saveProgress(msgs: Anthropic.MessageParam[]) {
-        await fastify.db
-          .update(apps)
-          .set({ conversationHistory: stripCacheControl(msgs) as unknown[], updatedAt: new Date() })
-          .where(eq(apps.id, appId))
-      }
 
       const sharedAgentParams = {
         ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+        signal: ac.signal,
         onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
         onText: (delta: string) => sendEvent('text', { text: delta }),
         onToolCall: (name: string, input: unknown, result: unknown) => {
@@ -911,7 +929,6 @@ function buildApp(fastify: Fastify) {
 
 
       // --- Planning phase (fresh builds only) ---
-      let buildMessages = messages
       if (!isRefinement) {
         const planResult = await runAgentLoop({
           effort: 'medium',
@@ -977,7 +994,13 @@ function buildApp(fastify: Fastify) {
         sendEvent('widget', updated)
       }
     } catch (err) {
-      if (err instanceof InsufficientCreditsError) {
+      const isAbort = ac.signal.aborted || (err instanceof Error && err.name === 'AbortError')
+      if (isAbort) {
+        for (const qid of sessionQuestionIds) pendingQuestions.delete(qid)
+        try { await saveProgress(buildMessages) } catch (e) { fastify.log.warn(e, 'failed to save progress on cancel') }
+        if (!request.raw.writableEnded) sendEvent('cancelled', {})
+        fastify.log.info({ appId, buildSessionId }, 'app build cancelled by client')
+      } else if (err instanceof InsufficientCreditsError) {
         sendEvent('error', { code: 'insufficient_credits', message: 'Insufficient credits' })
       } else {
         fastify.log.error(err, 'app build error')
@@ -985,8 +1008,10 @@ function buildApp(fastify: Fastify) {
       }
     }
 
-    sendEvent('done', {})
-    reply.raw.end()
+    if (!request.raw.writableEnded) {
+      sendEvent('done', {})
+      reply.raw.end()
+    }
   })
 }
 

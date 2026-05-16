@@ -1,7 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { Model, OutputConfig } from '@anthropic-ai/sdk/resources'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, baseURL: 'https://api.deepseek.com/anthropic' })
+const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const deepseekClient = new Anthropic({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: 'https://api.deepseek.com/anthropic',
+})
+
+function clientFor(model: string): Anthropic {
+  return model.startsWith('deepseek') ? deepseekClient : anthropicClient
+}
 
 export type AgentTool = Anthropic.Tool & {
   handler: (input: Record<string, unknown>) => Promise<unknown>
@@ -65,6 +73,7 @@ export async function runAgentLoop(params: {
   onThinking?: (delta: string) => void
   onToolCall?: (name: string, input: unknown, result: unknown) => void
   onUsage?: (usage: Anthropic.Usage, model: string, durationSeconds: number) => void | Promise<void>
+  signal?: AbortSignal
 }): Promise<Anthropic.MessageParam[]> {
   const {
     messages,
@@ -76,7 +85,14 @@ export async function runAgentLoop(params: {
     onThinking,
     onToolCall,
     onUsage,
+    signal,
   } = params
+
+  function throwIfAborted() {
+    if (signal?.aborted) {
+      throw signal.reason ?? new DOMException('Aborted', 'AbortError')
+    }
+  }
 
   const sdkTools: Anthropic.Tool[] = tools.map(({ handler: _h, ...t }) => t)
 
@@ -93,18 +109,19 @@ export async function runAgentLoop(params: {
   let continueLoop = true
   let iteration = 0
   while (continueLoop) {
+    throwIfAborted()
     iteration++
     console.log(`[agent] iteration ${iteration} — sending request`)
 
     const baseParams = {
-      model: 'deepseek-v4-flash',
+      model,
       system: system as Anthropic.MessageStreamParams['system'],
       tools: sdkTools.length > 0 ? sdkTools : undefined,
       messages,
     }
 
     const iterStart = Date.now()
-    const stream = anthropic.messages.stream({
+    const stream = clientFor(model).messages.stream({
       max_tokens: 20_000,
       ...baseParams,
       thinking: {
@@ -112,7 +129,13 @@ export async function runAgentLoop(params: {
       }, output_config: {
         effort: effort
       }
-    })
+    }, { signal })
+
+    const onAbort = () => {
+      try { stream.abort() } catch { /* noop */ }
+    }
+    if (signal?.aborted) onAbort()
+    else signal?.addEventListener('abort', onAbort, { once: true })
 
     const toolUseBlocks = new Map<number, { id: string; name: string; inputJson: string }>()
 
@@ -146,6 +169,7 @@ export async function runAgentLoop(params: {
     }
 
     const finalMessage = await stream.finalMessage()
+    signal?.removeEventListener('abort', onAbort)
     const durationSeconds = (Date.now() - iterStart) / 1000
     console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size} duration=${durationSeconds}s`)
     await onUsage?.(finalMessage.usage, model, durationSeconds)
@@ -180,6 +204,7 @@ export async function runAgentLoop(params: {
       )
 
       messages.push({ role: 'user', content: toolResults })
+      throwIfAborted()
     } else {
       continueLoop = false
     }

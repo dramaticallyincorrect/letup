@@ -6,15 +6,73 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Alert } from '@/components/ui/alert'
-import { AppIcon } from './components/app-icon'
+import { AppIcon, TINT_STYLES } from './components/app-icon'
 import { AppPreview } from './app-preview'
-import { getAppGlyph, getAppTint } from './data'
-import { SendHorizonal, AlertTriangle } from 'lucide-react'
+import { getAppGlyph, getAppTint, type AppTint } from './data'
+import {
+  ArrowUp,
+  AlertTriangle,
+  Square,
+  Sparkles,
+  ChevronRight,
+  Check,
+} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ErrorBoundary } from 'react-error-boundary'
+
+type Model = {
+  id: string
+  label: string
+  description: string
+  provider: 'claude' | 'deepseek'
+}
+
+const MODELS: Model[] = [
+  { id: 'claude-opus-4-7', label: 'Opus 4.7', description: 'Most capable', provider: 'claude' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: 'Balanced — default', provider: 'claude' },
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', description: 'Cheap', provider: 'claude' },
+  { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro', description: 'Capable but slower - Discounted', provider: 'deepseek' },
+  { id: 'deepseek-v4-flash', label: 'DeepSeek v4 Flash', description: 'Cheap & fast - Discounted', provider: 'deepseek' },
+
+] as const
+type ModelId = typeof MODELS[number]['id']
+const DEFAULT_MODEL: ModelId = 'claude-sonnet-4-6'
+
+const PROVIDER_TINT: Record<Model['provider'], AppTint> = {
+  claude: 'coral',
+  deepseek: 'sky',
+}
+
+const MORPH_GLYPHS = ['✦', '❀', '◐', '✿', '◈', '♫', '✷', '◆']
+
+const MORPH_SIZE_CLASS = {
+  lg: 'size-[60px] rounded-2xl text-[28px]',
+  xl: 'size-[76px] rounded-[18px] text-[34px]',
+} as const
+
+function MorphingAppIcon({ size }: { size: 'lg' | 'xl' }) {
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => {
+      setIndex(i => (i + 1) % MORPH_GLYPHS.length)
+    }, 2200)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div
+      className={cn('grid place-items-center shrink-0 font-medium', MORPH_SIZE_CLASS[size])}
+      style={TINT_STYLES.coral}
+    >
+      <span key={index} className="animate-morph-in inline-block leading-none">
+        {MORPH_GLYPHS[index]}
+      </span>
+    </div>
+  )
+}
 
 export type ChatMessage =
   | { role: 'user'; content: string }
@@ -48,56 +106,108 @@ function ChatComposer({
   currentActivity,
   hasMessages,
   onSend,
+  onStop,
+  selectedModel,
+  onModelChange,
+  inputValue,
+  setInputValue,
 }: {
   isSending: boolean
   currentActivity: string | null
   hasMessages: boolean
   onSend: (text: string) => void
+  onStop: () => void
+  selectedModel: ModelId
+  onModelChange: (m: ModelId) => void
+  inputValue: string
+  setInputValue: (s: string) => void
 }) {
-  const [inputValue, setInputValue] = useState('')
-
   function submit() {
     if (!inputValue.trim() || isSending) return
     onSend(inputValue)
     setInputValue('')
   }
 
+  const activeModel = MODELS.find(m => m.id === selectedModel) ?? MODELS[0]
+
   return (
-    <div className="px-5 py-4 pb-5 border-border bg-card shrink-0">
+    <div className="px-5 pt-3 pb-5 shrink-0">
       {currentActivity && (
         <div
           key={currentActivity}
-          className="mb-2.5 flex items-center gap-2 text-[12px] text-muted-foreground animate-activity-in"
+          className="mb-2.5 flex justify-end animate-activity-in"
         >
-          <span className="size-1.5 rounded-full bg-accent shrink-0 animate-pulse" />
-          <span className="truncate">{currentActivity}</span>
+          <div className="inline-flex items-center gap-2 px-2">
+            <span className="size-1.5 rounded-full bg-accent shrink-0 animate-pulse" />
+            <span className="text-[12px] text-muted-foreground truncate max-w-60">{currentActivity}</span>
+          </div>
         </div>
       )}
-      <div className="bg-card border-[1.5px] border-input rounded-2xl px-4 pt-3.5 pb-3">
+      <div className="bg-card border border-border/70 rounded-3xl px-4 pt-3.5 pb-3 shadow-[var(--shadow-md)] transition-all focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/20">
         <Textarea
           rows={1}
-          placeholder={hasMessages ? 'Ask Claude to change something…' : 'Describe your app…'}
+          placeholder={hasMessages ? 'Ask Claude to change something…' : 'Describe your app — what would you like to build?'}
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter' && e.metaKey) {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault()
               submit()
             }
           }}
           disabled={isSending}
-          className="min-h-7 max-h-40 border-0 resize-none font-sans border-none focus:border-0 focus-visible:ring-0"
+          className="min-h-7 max-h-40 border-0 resize-none font-sans border-none bg-transparent focus:border-0 focus-visible:ring-0 px-1 text-[15px] placeholder:text-muted-foreground/70"
         />
         <div className="flex items-center gap-1.5 mt-2">
-          <div className="flex-1"></div>
-          <Button
-            size='sm'
-            disabled={!inputValue.trim() || isSending}
-            onClick={submit}
+          <Select
+            value={selectedModel}
+            onValueChange={(v) => onModelChange(v as ModelId)}
+            disabled={isSending}
           >
-            <SendHorizonal />
-            Send
-          </Button>
+            <SelectTrigger
+              size="sm"
+              className="h-7 w-auto gap-1.5 border-0 bg-transparent text-xs text-muted-foreground hover:bg-secondary shadow-none focus-visible:ring-0"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-sm">{activeModel.label}</span>
+              </span>
+            </SelectTrigger>
+            <SelectContent
+              position="popper" side="top" sideOffset={8} align="start" className='p-1.5'>
+              {MODELS.map(m => (
+                <SelectItem key={m.id} value={m.id} className="py-2">
+                  <span className="flex items-center gap-2.5">
+                    <span className="flex flex-col items-start">
+                      <span className="text-sm">{m.label}</span>
+                      <span className="text-[11px] text-muted-foreground">{m.description}</span>
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex-1"></div>
+          {isSending ? (
+            <Button
+              size='sm'
+              variant='ghost'
+              onClick={onStop}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            >
+              <Square className="fill-current" />
+              Stop
+            </Button>
+          ) : (
+            <Button
+              size='sm'
+              disabled={!inputValue.trim()}
+              onClick={submit}
+              className="rounded-full transition active:scale-95 disabled:opacity-40"
+            >
+              <ArrowUp />
+              Send
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -135,6 +245,8 @@ export function CreatePageInner({
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
   const [initError, setInitError] = useState<string | null>(null)
   const [lowCreditsBalance, setLowCreditsBalance] = useState<number | null>(null)
+  const [selectedModel, setSelectedModel] = useState<ModelId>(DEFAULT_MODEL)
+  const [inputValue, setInputValue] = useState('')
 
   const { data: billing } = useQuery({
     queryKey: ['billing-status'],
@@ -146,15 +258,16 @@ export function CreatePageInner({
   const lowCredits = effectiveCredits !== null && effectiveCredits <= 5
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    console.log('Messages updated:', messages)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages])
 
   const status = isSending ? 'thinking' : compiledCode ? 'ready' : 'draft'
-  const statusLabel = isSending ? 'Thinking…' : compiledCode ? 'Ready' : 'Draft'
+  const statusLabel = isSending ? 'Thinking' : compiledCode ? 'Ready' : 'Draft'
 
-  const currentTint = widgetId ? getAppTint(widgetId) : 'graphite'
+  const currentTint = widgetId ? getAppTint(widgetId) : 'coral'
   const currentGlyph = getAppGlyph(appName)
 
   async function handleSend(text: string) {
@@ -182,8 +295,11 @@ export function CreatePageInner({
       { role: 'assistant', content: '', streaming: true },
     ])
 
+    const ac = new AbortController()
+    abortRef.current = ac
+
     try {
-      const res = await client.buildApp(activeWidgetId, msg)
+      const res = await client.buildApp(activeWidgetId, msg, { signal: ac.signal, model: selectedModel })
       if (!res.ok || !res.body) throw new Error(`Request failed: ${res.status}`)
 
       const reader = res.body.getReader()
@@ -296,6 +412,20 @@ export function CreatePageInner({
             }
             return next
           })
+        } else if (event === 'cancelled') {
+          queryClient.invalidateQueries({ queryKey: ['billing-status'] })
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                content: last.content || 'Build stopped.',
+                streaming: false,
+              }
+            }
+            return next
+          })
         } else if (event === 'done') {
           queryClient.invalidateQueries({ queryKey: ['billing-status'] })
           setMessages(prev => {
@@ -310,13 +440,16 @@ export function CreatePageInner({
       }
     } catch (err) {
       queryClient.invalidateQueries({ queryKey: ['billing-status'] })
+      const isAbort = ac.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')
       setMessages(prev => {
         const next = [...prev]
         const last = next[next.length - 1]
         if (last?.role === 'assistant') {
           next[next.length - 1] = {
             ...last,
-            content: err instanceof Error ? err.message : 'Something went wrong',
+            content: isAbort
+              ? last.content || 'Build stopped.'
+              : err instanceof Error ? err.message : 'Something went wrong',
             streaming: false,
           }
         }
@@ -324,8 +457,13 @@ export function CreatePageInner({
       })
     }
 
+    abortRef.current = null
     setCurrentActivity(null)
     setIsSending(false)
+  }
+
+  function handleStop() {
+    abortRef.current?.abort()
   }
 
   async function handleAnswerQuestion(questionId: string, directAnswer?: string) {
@@ -361,204 +499,210 @@ export function CreatePageInner({
     )
   }
 
+
   return (
     <div className="bg-background text-foreground font-sans antialiased flex flex-col h-screen">
       <ResizablePanelGroup orientation="horizontal" >
         {/* Chat pane */}
-        <ResizablePanel defaultSize='30%' minSize='15%' className="flex flex-col min-h-0 bg-card">
+        <ResizablePanel
+          defaultSize='38%'
+          minSize='20%'
+          className="flex flex-col min-h-0 bg-gradient-to-b from-card via-card to-[var(--warm)] relative"
+        >
           {/* Chat header */}
-          <div className="px-6 py-4 border-b border-border flex items-center gap-3.5 bg-card shrink-0">
-            <AppIcon tint={currentTint} glyph={currentGlyph} size="sm" />
-            <input
-              className="text-base font-bold bg-transparent border-0 px-2 py-1 -mx-2 rounded-lg text-foreground font-sans outline-none w-65 tracking-[-0.01em] hover:bg-secondary focus:bg-secondary transition-colors"
-              value={appName}
-              onChange={e => setAppName(e.target.value)}
-            />
-            <div className="flex-1" />
-            <span className="text-[12.5px] font-medium text-muted-foreground inline-flex items-center gap-2">
+          <div className="px-5 py-3.5 flex items-center gap-3 shrink-0 relative">
+            <AppIcon tint={currentTint} glyph={currentGlyph} size="md" />
+            <div className="flex flex-col min-w-0 flex-1">
+              <input
+                className="text-[15px] font-bold bg-transparent border-0 px-1.5 py-0.5 -mx-1.5 rounded-md text-foreground font-sans outline-none tracking-[-0.01em] hover:bg-secondary focus:bg-secondary transition-colors truncate"
+                value={appName}
+                onChange={e => setAppName(e.target.value)}
+              />
+
+            </div>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border',
+                status === 'ready' && 'bg-[oklch(0.7_0.15_145/0.1)] border-[oklch(0.7_0.15_145/0.3)] text-[oklch(0.42_0.1_145)]',
+                status === 'thinking' && 'bg-[oklch(0.78_0.16_80/0.12)] border-[oklch(0.78_0.16_80/0.35)] text-[oklch(0.5_0.1_80)]',
+                status === 'draft' && 'bg-secondary border-border text-muted-foreground',
+              )}
+            >
               <span
                 className={cn(
-                  'size-2 rounded-full',
-                  status === 'ready' && 'bg-[oklch(0.7_0.15_145)] shadow-[0_0_0_4px_oklch(0.7_0.15_145/0.18)]',
-                  status === 'thinking' && 'bg-[oklch(0.78_0.16_80)] shadow-[0_0_0_4px_oklch(0.78_0.16_80/0.22)]',
-                  status === 'draft' && 'bg-muted-foreground/40',
+                  'size-1.5 rounded-full',
+                  status === 'ready' && 'bg-[oklch(0.55_0.15_145)]',
+                  status === 'thinking' && 'bg-[oklch(0.65_0.16_80)] animate-pulse',
+                  status === 'draft' && 'bg-muted-foreground/50',
                 )}
               />
               {statusLabel}
-              <Button size="sm" disabled={!compiledCode} onClick={handleSave}>
-                Add to library
-              </Button>
             </span>
+            <Button
+              size="sm"
+              disabled={!compiledCode}
+              onClick={handleSave}
+              variant={compiledCode ? 'default' : 'outline'}
+              className="rounded-full"
+            >
+              <Sparkles className="size-3.5" />
+              Add to library
+            </Button>
+            {/* Gradient underline */}
+            <div className="absolute bottom-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-accent/40 to-transparent" />
           </div>
 
           {/* Chat scroll */}
-          <div className="flex-1 overflow-y-auto px-7 py-7 flex flex-col gap-5.5" ref={scrollRef}>
-            {messages.length === 0 && (
-              <div>
-                <div className="flex gap-3.5 max-w-full">
-                  <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
-                    C
-                  </div>
-                  <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
-                    <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">Claude</div>
-                    <p className="m-0">
-                      What should we build? Describe it — I'll draft something and we can shape it together.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
+          <div
+            className="flex-1 overflow-y-auto px-6 pt-6 pb-4 flex flex-col gap-4 relative"
+            ref={scrollRef}
+            style={{
+              maskImage: 'linear-gradient(to bottom, transparent 0, black 16px, black calc(100% - 8px), black 100%)',
+            }}
+          >
             {messages.map((m, i) => {
               if (m.role === 'user') {
                 return (
-                  <div key={i} className="flex gap-3.5 max-w-full">
-                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-foreground text-background">
-                      You
-                    </div>
-                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
-                      <div className="text-[12.5px] text-muted-foreground font-bold mb-1">You</div>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                  <div key={i} className="flex border-l border-s-fuchsia-600 animate-soft-pop bg-secondary/50 p-2 rounded">
+                    <div
+                      className="max-w-[85%] leading-[1.55] font-medium"
+                    >
+                      <div className="prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:m-0">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                      </div>
                     </div>
                   </div>
                 )
               }
               if (m.role === 'assistant') {
                 return (
-                  <div key={i} className="flex gap-3.5 max-w-full">
-                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
-                      C
-                    </div>
-                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1">
-                      <div className="text-[12.5px] text-muted-foreground font-bold mb-1">Claude</div>
-
-                      {/* Thinking: animated indicator while thinking, accordion when done */}
-                      {m.streaming && m.thinking && !m.content ? (
-                        <div className="flex items-center gap-2 text-[12px] text-muted-foreground mb-1.5">
-                          <div className="inline-flex gap-1.25">
-                            <span className="size-1.75 rounded-full bg-muted-foreground/50 animate-thinking-dot" />
-                            <span className="size-1.75 rounded-full bg-muted-foreground/50 animate-thinking-dot animate-thinking-dot-2" />
-                            <span className="size-1.75 rounded-full bg-muted-foreground/50 animate-thinking-dot animate-thinking-dot-3" />
+                  <div key={i} className="max-w-full animate-soft-pop">
+                    <div className="text-[14.5px] leading-[1.55] text-foreground">
+                      <div>
+                        {/* Thinking: animated indicator while thinking, accordion when done */}
+                        {m.streaming && m.thinking && !m.content && (
+                          <div className="flex items-center gap-2 text-[12px] text-muted-foreground italic">
+                            <Sparkles className="size-3.5 text-accent animate-pulse" />
+                            <span>thinking</span>
+                            <span className="inline-flex gap-1 ml-1">
+                              <span className="size-1.25 rounded-full bg-muted-foreground/50 animate-thinking-dot" />
+                              <span className="size-1.25 rounded-full bg-muted-foreground/50 animate-thinking-dot animate-thinking-dot-2" />
+                              <span className="size-1.25 rounded-full bg-muted-foreground/50 animate-thinking-dot animate-thinking-dot-3" />
+                            </span>
                           </div>
-                          Thinking…
-                        </div>
-                      ) : !m.streaming && m.thinking ? (
-                        <details className="mb-2 group">
-                          <summary className="cursor-pointer list-none text-[11.5px] text-muted-foreground/70 flex items-center gap-1.5 select-none hover:text-muted-foreground transition-colors">
-                            <span className="inline-block transition-transform group-open:rotate-90 text-[9px]">▶</span>
-                            Thought for a moment
-                          </summary>
-                          <div className="mt-1.5 pl-3 border-l-2 border-border text-sm text-muted-foreground whitespace-pre-wrap font-light leading-relaxed max-h-64 overflow-y-auto">
-                            <ReactMarkdown>
-                              {m.thinking}
-                            </ReactMarkdown>
-                          </div>
-                        </details>
-                      ) : null}
+                        )}
 
-                      {/* Text content or initial waiting dots */}
-                      {m.content ? (
-                        <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none font-light text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                        </div>
-                      ) : m.streaming && !m.thinking ? (
-                        <div className="inline-flex gap-1.25 py-1.5">
-                          <span className="size-1.75 rounded-full bg-accent animate-thinking-dot" />
-                          <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-2" />
-                          <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-3" />
-                        </div>
-                      ) : null}
+                        {/* Text content or initial waiting dots */}
+                        {m.content ? (
+                          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-[14.5px] leading-[1.55] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                          </div>
+                        ) : m.streaming && !m.thinking ? (
+                          <div className="inline-flex gap-1.25 py-0.5">
+                            <span className="size-1.75 rounded-full bg-accent animate-thinking-dot" />
+                            <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-2" />
+                            <span className="size-1.75 rounded-full bg-accent animate-thinking-dot animate-thinking-dot-3" />
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 )
               }
               if (m.role === 'question') {
                 return (
-                  <div key={i} className="flex gap-3.5 max-w-full">
-                    <div className="size-7.5 rounded-[9px] shrink-0 grid place-items-center text-xs font-bold bg-accent text-accent-foreground">
-                      C
-                    </div>
-                    <div className="flex-1 text-[15px] leading-[1.55] text-foreground pt-1 w-full">
-                      <div className="text-[12.5px] text-muted-foreground font-semibold mb-1">Claude</div>
-                      <p className="m-0">
-                        <ReactMarkdown>
-                          {m.question}
-                        </ReactMarkdown>
-                      </p>
-                      {!m.answered && (
-                        <div className="mt-2">
-                          {m.suggestions.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {m.suggestions.map((s, idx) => (
-                                <Button
-                                  size='xs'
-                                  variant='secondary'
-                                  key={idx}
-                                  onClick={() => handleAnswerQuestion(m.questionId, s)}
-                                >
-                                  {s}
-                                </Button>
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex gap-2 items-center mt-2 mr-24">
-                            <Input
-                              type="text"
-                              value={questionAnswers[m.questionId] ?? ''}
-                              onChange={e =>
-                                setQuestionAnswers(prev => ({
-                                  ...prev,
-                                  [m.questionId]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault()
-                                  handleAnswerQuestion(m.questionId)
-                                }
-                              }}
-                              placeholder="something else "
-                              className="flex-1"
-                              autoFocus
-                            />
-                            <Button
-                              size="sm"
-                              onClick={() => handleAnswerQuestion(m.questionId)}
-                              disabled={!(questionAnswers[m.questionId] ?? '').trim()}
-                            >
-                              Answer
-                            </Button>
-                          </div>
+                  <div key={i} className="max-w-full animate-soft-pop">
+                    <div className="min-w-0">
+                      <div
+                        className="border-l-2 pl-3.5"
+                        style={{
+                          borderColor: 'var(--tint-amber-bg)',
+                          color: 'var(--foreground)',
+                        }}
+                      >
+                        <div className="text-[14.5px] leading-[1.55] [&>p]:m-0 prose prose-sm max-w-none">
+                          <ReactMarkdown>{m.question}</ReactMarkdown>
                         </div>
-                      )}
+                        {!m.answered && (
+                          <div className="mt-3">
+                            {m.suggestions.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {m.suggestions.map((s, idx) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => handleAnswerQuestion(m.questionId, s)}
+                                    className="rounded-full bg-secondary hover:bg-secondary/70 px-3 py-1 text-[12px] font-medium text-foreground transition-colors"
+                                  >
+                                    {s}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex gap-2 items-center mt-2">
+                              <Input
+                                type="text"
+                                value={questionAnswers[m.questionId] ?? ''}
+                                onChange={e =>
+                                  setQuestionAnswers(prev => ({
+                                    ...prev,
+                                    [m.questionId]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    handleAnswerQuestion(m.questionId)
+                                  }
+                                }}
+                                placeholder="something else…"
+                                className="flex-1 bg-card/80"
+                                autoFocus
+                              />
+                              <Button
+                                size="sm"
+                                onClick={() => handleAnswerQuestion(m.questionId)}
+                                disabled={!(questionAnswers[m.questionId] ?? '').trim()}
+                                className="rounded-full"
+                              >
+                                Answer
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
               }
               if (m.role === 'step') {
                 return (
-                  <div key={i} className="flex items-center gap-2 py-1">
+                  <div key={i} className="flex items-center gap-2 py-1.5 animate-soft-pop">
                     <div className="h-px flex-1 bg-border" />
-                    <span className="text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-wide px-1">{m.label}</span>
+                    <span className="size-1 rounded-full bg-border" />
+                    <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-[0.08em] px-1">
+                      {m.label}
+                    </span>
+                    <span className="size-1 rounded-full bg-border" />
                     <div className="h-px flex-1 bg-border" />
                   </div>
                 )
               }
               if (m.role === 'phase') {
                 return (
-                  <div key={i} className="flex items-center gap-2">
+                  <div key={i} className="flex items-center gap-2 animate-soft-pop">
                     <span
                       className={cn(
                         'inline-flex items-center gap-1.5 text-[11.5px] font-semibold px-2.5 py-1 rounded-full border',
                         m.status === 'building'
-                          ? 'bg-[oklch(0.78_0.16_80/0.1)] border-[oklch(0.78_0.16_80/0.3)] text-[oklch(0.55_0.1_80)]'
-                          : 'bg-[oklch(0.7_0.15_145/0.1)] border-[oklch(0.7_0.15_145/0.3)] text-[oklch(0.45_0.1_145)]'
+                          ? 'bg-[oklch(0.78_0.16_80/0.1)] border-[oklch(0.78_0.16_80/0.3)] text-[oklch(0.5_0.1_80)] shadow-[0_0_0_4px_oklch(0.78_0.16_80/0.08)]'
+                          : 'bg-[oklch(0.7_0.15_145/0.1)] border-[oklch(0.7_0.15_145/0.3)] text-[oklch(0.42_0.1_145)]'
                       )}
                     >
                       {m.status === 'building' ? (
                         <span className="size-1.5 rounded-full bg-current animate-pulse" />
                       ) : (
-                        <span className="text-[10px]">✓</span>
+                        <Check className="size-3 stroke-[3]" />
                       )}
                       {m.name}
                     </span>
@@ -597,26 +741,48 @@ export function CreatePageInner({
             currentActivity={currentActivity}
             hasMessages={messages.length > 0}
             onSend={handleSend}
+            onStop={handleStop}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            inputValue={inputValue}
+            setInputValue={setInputValue}
           />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
 
         {/* Preview pane */}
-        <ResizablePanel defaultSize='70%' className="flex flex-col min-h-0 relative overflow-hidden" style={{ background: 'var(--warm)' } as React.CSSProperties}>
+        <ResizablePanel
+          defaultSize='62%'
+          className="flex flex-col min-h-0 relative overflow-hidden"
+          style={{ background: 'var(--warm)' } as React.CSSProperties}
+        >
           {!compiledCode ? (
-            <div className="flex-1 flex items-center justify-center p-9 overflow-auto">
-              <div className="flex flex-col items-center text-center gap-4 px-8 py-15 text-muted-foreground">
-                <div className="size-16 rounded-[18px] bg-card border-[1.5px] border-dashed border-input grid place-items-center text-[26px] text-foreground/30">
-                  ◌
+            <div className="flex-1 flex items-center justify-center p-8 overflow-auto relative">
+              {/* Drifting gradient blobs */}
+              <div
+                className="absolute size-[28rem] rounded-full blur-3xl opacity-50 animate-gradient-drift pointer-events-none"
+                style={{ background: 'var(--tint-coral-bg)', top: '10%', left: '15%' }}
+              />
+              <div
+                className="absolute size-[24rem] rounded-full blur-3xl opacity-50 animate-gradient-drift-2 pointer-events-none"
+                style={{ background: 'var(--tint-amber-bg)', bottom: '8%', right: '12%' }}
+              />
+
+              <div className="relative flex flex-col items-center gap-7 max-w-md w-full animate-soft-pop">
+                <div className="animate-float">
+                  <MorphingAppIcon size="xl" />
                 </div>
-                <h3 className="text-lg font-bold text-foreground m-0 tracking-[-0.01em]">
-                  Your app will appear here
-                </h3>
-                <p className="text-sm text-muted-foreground max-w-85 leading-[1.55] m-0">
-                  Send a message to Claude. As you chat, the preview updates in real time — try a
-                  few things, then save it to your library.
-                </p>
+
+                <div className="text-center">
+                  <h3 className="text-2xl font-bold text-foreground tracking-tight">
+                    Your app will appear here
+                  </h3>
+                  <p className="mt-2 text-[15px] text-muted-foreground max-w-80 leading-[1.55] mx-auto">
+                    Send a message — the preview updates as Claude builds.
+                  </p>
+                </div>
+
               </div>
             </div>
           ) : (

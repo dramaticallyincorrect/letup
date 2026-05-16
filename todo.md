@@ -10,15 +10,14 @@ a marketplace for user created app
 3. ~~logged in -> upgrade to premium~~
 4. ~~account~~
 5. credit
-   1. show credits remaining when credit is low
-   2. credit top up
+   1. credit top up
 6. ~~landing page~~
 7. optimize the new phase build system
-8.  go through the core workflows and review the code
+8. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
-9.  share console logs with ai
+9. share console logs with ai
    1. in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai
 
 ## check

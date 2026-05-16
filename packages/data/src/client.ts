@@ -119,12 +119,17 @@ export async function deleteApp(appId: string): Promise<void> {
   await apiFetch(`/apps/${appId}/draft`, { method: 'DELETE' })
 }
 
-export function buildApp(appId: string, userMessage: string): Promise<Response> {
+export function buildApp(
+  appId: string,
+  userMessage: string,
+  opts?: { signal?: AbortSignal; model?: string },
+): Promise<Response> {
   return fetch(`${baseUrl}/apps/build`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ appId, userMessage }),
+    body: JSON.stringify({ appId, userMessage, ...(opts?.model ? { model: opts.model } : {}) }),
+    signal: opts?.signal,
   })
 }
 
@@ -220,6 +225,7 @@ export async function generateText({ prompt, system, model }: { prompt: string; 
   const res = await apiFetch('/ai/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ prompt, system, model }),
   })
   if (!res.ok) throw new Error(`AI request failed: ${res.status}`)

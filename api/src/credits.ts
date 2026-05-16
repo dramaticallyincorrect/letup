@@ -7,12 +7,21 @@ import { aiUsageLogs } from './db/schema'
 // Scale: 1 USD = 12,500,000 micro-units (haiku input $0.80/MTok → 10 mu/token).
 // Unknown models fall back to haiku (cheapest) so new models never go untracked.
 const MODEL_RATES: Record<string, { input: number; output: number; cacheCreation: number; cacheRead: number }> = {
-  'claude-haiku-4-5':  { input: 10,  output: 50,  cacheCreation: 13,  cacheRead: 1  },
-  'claude-sonnet-4-6': { input: 38,  output: 188, cacheCreation: 47,  cacheRead: 4  },
-  'claude-opus-4-7':   { input: 188, output: 938, cacheCreation: 234, cacheRead: 19 },
+  'claude-haiku-4-5':    { input: 10,    output: 50,   cacheCreation: 13,    cacheRead: 1       },
+  'claude-sonnet-4-6':   { input: 38,    output: 188,  cacheCreation: 47,    cacheRead: 4       },
+  'claude-opus-4-7':     { input: 188,   output: 938,  cacheCreation: 234,   cacheRead: 19      },
+  'deepseek-v4-flash':   { input: 1.75,  output: 3.5,  cacheCreation: 1.75,  cacheRead: 0.035   },
+  'deepseek-v4-pro':     { input: 21.75, output: 43.5, cacheCreation: 21.75, cacheRead: 0.18125 },
 }
 
 const HAIKU_RATES = MODEL_RATES['claude-haiku-4-5']
+
+const DEEPSEEK_PROMO_END = Date.parse('2026-05-31T23:59:59Z')
+
+function deepseekDiscount(model: string, now: number): number {
+  if (!model.startsWith('deepseek-v4')) return 1
+  return now <= DEEPSEEK_PROMO_END ? 0.5 : 1
+}
 
 function getRates(model: string) {
   // Match by prefix so versioned model IDs (e.g. claude-haiku-4-5-20251001) still resolve.
@@ -22,14 +31,14 @@ function getRates(model: string) {
   return HAIKU_RATES
 }
 
-export function tokensToMicroUnits(usage: Anthropic.Usage, model: string): bigint {
+export function tokensToMicroUnits(usage: Anthropic.Usage, model: string, now: number = Date.now()): bigint {
   const r = getRates(model)
-  return BigInt(
+  const raw =
     (usage.input_tokens ?? 0) * r.input +
     (usage.output_tokens ?? 0) * r.output +
     ((usage as any).cache_creation_input_tokens ?? 0) * r.cacheCreation +
     ((usage as any).cache_read_input_tokens ?? 0) * r.cacheRead
-  )
+  return BigInt(Math.round(raw * deepseekDiscount(model, now)))
 }
 
 export class InsufficientCreditsError extends Error {
