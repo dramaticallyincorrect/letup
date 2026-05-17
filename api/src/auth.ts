@@ -4,7 +4,7 @@ import { db } from './db'
 import { user, session, account, verification, userRelations } from './db/auth-schema'
 import { userCredits, userSubscriptions } from './db/schema'
 
-const FREE_CREDITS_MICRO_UNITS = 125_000_000n // 10 credits × 12,500,000 mu/credit
+const FREE_CREDITS_MICRO_UNITS = 18_750_000n // 15 credits × 1,250,000 mu/credit ($1.50 one-time grant)
 
 export const auth = betterAuth({
     database: drizzleAdapter(db, {

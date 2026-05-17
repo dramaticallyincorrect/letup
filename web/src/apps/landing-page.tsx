@@ -19,20 +19,20 @@ const SHOWCASE_APPS = [
 const AVATAR_COLORS = ['#D97757', '#5B8DEF', '#3EBF8A', '#E8A838', '#A87ECF']
 
 const FREE_FEATURES = [
-  '10 Claude credits / month',
-  'Build & run 1 app',
-  'Browse the marketplace',
-  'Install published apps',
-  'Share your app via link',
+  '15 Claude credits one-time',
+  'Sonnet 4.6 only',
+  'All app store apps',
+  'Included app data storage',
+  'Share your app in letup app store'
 ]
 
 const PRO_FEATURES = [
   '100 Claude credits / month',
+  'Advanced Models: Opus 4.7',
+  'Unlimited app builds',
+  'Customize app store apps',
   'Unlimited apps',
-  'Publish to the marketplace',
-  'Priority support',
-  'Early access to new features',
-  'Custom app domains',
+  'Share your app in letup app store'
 ]
 
 // coral variant tokens as CSS values
@@ -171,7 +171,7 @@ function HeroSection() {
           className="m-0 text-lg leading-relaxed max-w-lg font-normal text-pretty"
           style={{ color: CORAL.heroSub }}
         >
-          Create apps that fit your unique workflows, or customize and extend apps built by the community
+          Create web apps that fit your unique workflows, or customize and extend apps built by the community
         </p>
 
         {/* CTAs */}
@@ -418,7 +418,7 @@ function PricingSection() {
             Simple pricing
           </h2>
           <p className="mt-3 mb-0 mx-auto max-w-sm text-base text-muted-foreground leading-relaxed">
-            Start free. Upgrade when you're ready.
+            Start free. Or jump in building with pro.
           </p>
         </div>
 
@@ -433,7 +433,7 @@ function PricingSection() {
           />
           <PricingCard
             label="Pro"
-            amount="$12"
+            amount="$15"
             period="/ month"
             tagline="get the most out of letup with pro features"
             features={PRO_FEATURES}

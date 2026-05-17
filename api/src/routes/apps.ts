@@ -8,10 +8,10 @@ import { compile } from '@tailwindcss/node'
 import { and, desc, eq, isNotNull, max, or, sql } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
-import { apps, appVersions, userAppInstalls, aiUsageLogs } from '../db/schema'
+import { apps, appVersions, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
 import { openDb, openDraftDb, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
 import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
-import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, InsufficientCreditsError } from '../credits'
+import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microUnitsToCredits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
 import { VirtualFS } from '../virtual-fs/virtual-fs'
 
@@ -727,6 +727,14 @@ function buildApp(fastify: Fastify) {
       return reply.code(402).send({ error: 'Insufficient credits' })
     }
 
+    const [subRow] = await fastify.db
+      .select({ plan: userSubscriptions.plan })
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId))
+      .limit(1)
+    const userPlan = subRow?.plan ?? 'free'
+    const lowCreditsThreshold = userPlan === 'pro' ? 5 : 3
+
     const targetVersionNumber = draftRow.versionNumber
     const draftVersionId = draftRow.id
     const buildSessionId = randomUUID()
@@ -876,8 +884,8 @@ function buildApp(fastify: Fastify) {
           const newBalance = await checkAndDeductCredits(fastify.db, userId, mu)
           await logUsage(fastify.db, userId, 'build', model, usage, mu, draftVersionId, userMessage, buildSessionId, durationSeconds)
           if (!lowCreditsEmitted) {
-            const credits = Math.floor(Number(newBalance) / 12_500_000)
-            if (credits <= 5) {
+            const credits = microUnitsToCredits(newBalance)
+            if (credits <= lowCreditsThreshold) {
               lowCreditsEmitted = true
               sendEvent('low_credits', { credits })
             }

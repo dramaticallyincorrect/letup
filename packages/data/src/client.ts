@@ -166,8 +166,15 @@ export type AppVersionUsage = {
   totalMicroUnitsUsed: string
 }
 
+export const MU_PER_USD = 12_500_000
+export const MU_PER_CREDIT = 1_250_000
+
 export function microUnitsToUsd(microUnits: string | number | bigint): string {
-  return `$${(Number(microUnits) / 12_500_000).toFixed(4)}`
+  return `$${(Number(microUnits) / MU_PER_USD).toFixed(4)}`
+}
+
+export function microUnitsToCredits(microUnits: string | number | bigint): number {
+  return Math.floor(Number(microUnits) / MU_PER_CREDIT)
 }
 
 export async function getAppUsage(appId: string): Promise<AppVersionUsage[]> {

@@ -255,7 +255,8 @@ export function CreatePageInner({
   })
   const effectiveCredits =
     lowCreditsBalance !== null ? lowCreditsBalance : billing?.credits ?? null
-  const lowCredits = effectiveCredits !== null && effectiveCredits <= 5
+  const lowCreditsThreshold = billing?.plan === 'pro' ? 5 : 3
+  const lowCredits = effectiveCredits !== null && effectiveCredits <= lowCreditsThreshold
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)

@@ -21,7 +21,7 @@ import {
   LogOutIcon,
 } from 'lucide-react'
 
-const MONTHLY_CREDITS = { free: 10, pro: 100 } as const
+const PLAN_CREDITS = { free: 15, pro: 100 } as const
 
 export function AccountPage() {
   const navigate = useNavigate()
@@ -62,8 +62,8 @@ export function AccountPage() {
       day: 'numeric',
     })
     : null
-  const monthly = MONTHLY_CREDITS[plan]
-  const usedPct = Math.max(0, Math.min(100, (credits / monthly) * 100))
+  const allotment = PLAN_CREDITS[plan]
+  const usedPct = Math.max(0, Math.min(100, (credits / allotment) * 100))
 
   async function handleManageSubscription() {
     setPortalError(null)
@@ -176,7 +176,7 @@ export function AccountPage() {
                   {credits}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  of {monthly} monthly credits remaining
+                  of {allotment} {plan === 'pro' ? 'monthly' : 'one-time'} credits remaining
                 </span>
               </div>
               <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">

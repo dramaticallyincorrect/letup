@@ -112,7 +112,7 @@ export function PaymentPage() {
             </p>
             <h1 className="text-3xl font-extrabold tracking-tight mb-2">Pro plan</h1>
             <div className="flex items-baseline gap-1.5 mb-6">
-              <span className="text-4xl font-extrabold">$12</span>
+              <span className="text-4xl font-extrabold">$15</span>
               <span className="text-sm text-muted-foreground">/ month</span>
             </div>
             <p className="text-sm text-muted-foreground mb-6 leading-relaxed">

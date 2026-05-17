@@ -6,6 +6,14 @@ import { aiUsageLogs } from './db/schema'
 // Micro-units per token by model, anchored to real Anthropic pricing.
 // Scale: 1 USD = 12,500,000 micro-units (haiku 4.5 input $1/MTok → 12.5 mu/token).
 // Unknown models fall back to haiku (cheapest) so new models never go untracked.
+export const MU_PER_USD = 12_500_000
+// Display unit: 1 credit = $0.10 of real API cost.
+// Pro allocation of 100 credits = $10 cost; sold at $15 = $5 worst-case margin.
+export const MU_PER_CREDIT = 1_250_000
+export function microUnitsToCredits(microUnits: bigint | number | string): number {
+  return Math.floor(Number(microUnits) / MU_PER_CREDIT)
+}
+
 const MODEL_RATES: Record<string, { input: number; output: number; cacheCreation: number; cacheRead: number }> = {
   'claude-haiku-4-5':    { input: 12.5,  output: 62.5, cacheCreation: 15.625, cacheRead: 1.25    },
   'claude-sonnet-4-6':   { input: 37.5,  output: 187.5,cacheCreation: 46.875, cacheRead: 3.75    },

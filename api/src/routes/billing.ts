@@ -3,9 +3,10 @@ import { eq, sql } from 'drizzle-orm'
 import { Paddle, Environment, EventName } from '@paddle/paddle-node-sdk'
 import { Fastify } from '../fastify_type'
 import { userSubscriptions, userCredits } from '../db/schema'
+import { microUnitsToCredits } from '../credits'
 
-const PREMIUM_CREDITS = 1_250_000_000n // 100 credits × 12,500,000 mu/credit
-const FREE_CREDITS = 125_000_000n      // 10 credits  × 12,500,000 mu/credit
+const PREMIUM_CREDITS = 125_000_000n // 100 credits × 1,250,000 mu/credit ($10 raw API cost)
+const FREE_CREDITS = 18_750_000n     // 15 credits  × 1,250,000 mu/credit ($1.50 raw API cost)
 
 const paddle = new Paddle(process.env.PADDLE_API_KEY!, {
   environment: process.env.PADDLE_ENVIRONMENT === 'production'
@@ -33,7 +34,7 @@ function getBillingStatus(fastify: Fastify) {
     `)
 
     const microUnitsBalance = creditResult.length > 0 ? String(creditResult[0].balance) : '0'
-    const credits = Math.floor(Number(microUnitsBalance) / 12_500_000)
+    const credits = microUnitsToCredits(microUnitsBalance)
 
     return reply.send({
       plan: subscription?.plan ?? 'free',

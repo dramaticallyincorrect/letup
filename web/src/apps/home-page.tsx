@@ -57,7 +57,7 @@ export function HomePage() {
   }, [myApps, category, search])
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans antialiased">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased coral">
       <Chrome active="library" search={search} onSearch={setSearch} />
 
       <main className="max-w-7xl mx-auto px-8 pt-12 pb-24 max-[900px]:px-4 max-[900px]:pt-8 max-[900px]:pb-20">
