@@ -906,7 +906,12 @@ function buildApp(fastify: Fastify) {
             })
           await fastify.db.update(apps).set({ updatedAt: new Date() }).where(eq(apps.id, appId))
           const draft = openDraftDb(appId)
-          try { draft.exec(schemaSQL) } finally { draft.close() }
+          try { draft.exec(schemaSQL) } catch (error) {
+            console.error('Error occurred while executing schema SQL:', error)
+            return { error: error instanceof Error ? error.message : 'Unknown error during database setup' }
+          } finally {
+            draft.close()
+          }
           return { success: true }
         },
       }
