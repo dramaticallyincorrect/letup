@@ -710,6 +710,15 @@ function buildApp(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId, userMessage, model: modelOverride } = request.body
+
+    if (modelOverride) {
+      const allowed = ['claude-opus-4-7', 'claude-sonnet-4-6']
+      if (process.env.NODE_ENV !== 'production') allowed.push('deepseek-v4-flash')
+      if (!allowed.includes(modelOverride)) {
+        return reply.code(400).send({ error: 'Invalid model specified' })
+      }
+    }
+
     const userId = request.assertAuthenticated()
 
     const app = await loadAppWithVersion(fastify.db, appId)
@@ -745,9 +754,14 @@ function buildApp(fastify: Fastify) {
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
 
-    request.raw.on('close', () => {
-      if (!ac.signal.aborted) ac.abort()
-    })
+    const abortOnDisconnect = () => {
+      if (!ac.signal.aborted) {
+        fastify.log.info({ appId, buildSessionId }, 'client disconnected, aborting build')
+        ac.abort()
+      }
+    }
+    request.raw.on('close', abortOnDisconnect)
+    reply.raw.on('close', abortOnDisconnect)
 
     function sendEvent(event: string, data: unknown) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -1011,7 +1025,7 @@ function buildApp(fastify: Fastify) {
       if (isAbort) {
         for (const qid of sessionQuestionIds) pendingQuestions.delete(qid)
         try { await saveProgress(buildMessages) } catch (e) { fastify.log.warn(e, 'failed to save progress on cancel') }
-        if (!request.raw.writableEnded) sendEvent('cancelled', {})
+        if (!reply.raw.writableEnded) sendEvent('cancelled', {})
         fastify.log.info({ appId, buildSessionId }, 'app build cancelled by client')
       } else if (err instanceof InsufficientCreditsError) {
         sendEvent('error', { code: 'insufficient_credits', message: 'Insufficient credits' })
@@ -1021,7 +1035,7 @@ function buildApp(fastify: Fastify) {
       }
     }
 
-    if (!request.raw.writableEnded) {
+    if (!reply.raw.writableEnded) {
       sendEvent('done', {})
       reply.raw.end()
     }

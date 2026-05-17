@@ -19,15 +19,15 @@ const SHOWCASE_APPS = [
 const AVATAR_COLORS = ['#D97757', '#5B8DEF', '#3EBF8A', '#E8A838', '#A87ECF']
 
 const FREE_FEATURES = [
-  '15 Claude credits one-time',
+  '15 credits one-time',
   'Sonnet 4.6 only',
-  'All app store apps',
+  '3 installed apps',
   'Included app data storage',
   'Share your app in letup app store'
 ]
 
 const PRO_FEATURES = [
-  '100 Claude credits / month',
+  '100 credits / month',
   'Advanced Models: Opus 4.7',
   'Unlimited app builds',
   'Customize app store apps',
@@ -186,96 +186,12 @@ function HeroSection() {
             Sign up free{' '}
             <span style={{ opacity: 0.5, fontWeight: 400 }}>→</span>
           </Link>
-          <Link
-            to="/marketplace"
-            className="inline-flex items-center h-13 px-6.5 rounded-full font-semibold text-sm no-underline transition-[filter]"
-            style={{ background: CORAL.ctaSecBg, color: CORAL.ctaSecColor }}
-            onMouseEnter={e => (e.currentTarget.style.filter = 'brightness(0.95)')}
-            onMouseLeave={e => (e.currentTarget.style.filter = 'none')}
-          >
-            Browse marketplace
-          </Link>
-        </div>
-
-        {/* Social proof */}
-        <div className="flex items-center gap-3 justify-center">
-          <div className="flex">
-            {AVATAR_COLORS.map((c, i) => (
-              <div
-                key={i}
-                className="size-6.5 rounded-full shrink-0"
-                style={{
-                  background: c,
-                  marginLeft: i > 0 ? '-7px' : 0,
-                  border: `2.5px solid ${CORAL.heroBg}`,
-                }}
-              />
-            ))}
-          </div>
-          <p className="m-0 text-sm font-medium" style={{ color: CORAL.heroSub }}>
-            <strong style={{ color: CORAL.heroInk, fontWeight: 700 }}>2,400+</strong>{' '}
-            apps built this month
-          </p>
         </div>
 
         {/* App icon grid */}
         <div className="flex gap-2.5 justify-center flex-wrap max-w-lg mt-1">
           {SHOWCASE_APPS.map((app, i) => (
             <TintIcon key={i} tint={app.tint} glyph={app.g} className="size-13 text-2xl" />
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function ShowcaseSection() {
-  const doubled = [...SHOWCASE_APPS, ...SHOWCASE_APPS]
-  return (
-    <section className="py-22 bg-background border-t border-b border-border">
-      {/* Header */}
-      <div className="max-w-6xl mx-auto px-10 pb-12 text-center">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground m-0 mb-2.5">
-          App showcase
-        </p>
-        <h2
-          className="m-0 font-extrabold tracking-tight text-foreground leading-tight"
-          style={{ fontSize: 'clamp(1.625rem, 3vw, 2.5rem)' }}
-        >
-          What will you build?
-        </h2>
-        <p className="mt-3 mb-0 mx-auto max-w-lg text-base text-muted-foreground leading-relaxed text-pretty font-normal">
-          Build the app that matches you or customize existing apps to fit your needs.
-        </p>
-      </div>
-
-      {/* Marquee */}
-      <div
-        className="overflow-hidden"
-        style={{
-          maskImage: 'linear-gradient(to right, transparent, black 8%, black 92%, transparent)',
-          WebkitMaskImage:
-            'linear-gradient(to right, transparent, black 8%, black 92%, transparent)',
-        }}
-      >
-        <div className="animate-marquee flex gap-3.5 w-max p-4">
-          {doubled.map((app, i) => (
-            <Card
-              key={i}
-              className="w-54 shrink-0 rounded-2xl shadow-(--shadow-sm) bg-card p-0"
-            >
-              <CardContent className="p-4.5 pb-5 flex flex-col gap-2.5">
-                <TintIcon tint={app.tint} glyph={app.g} className="size-10 text-xl" />
-                <div>
-                  <div className="font-bold text-sm text-foreground tracking-tight">
-                    {app.name}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 leading-normal">
-                    {app.desc}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           ))}
         </div>
       </div>
@@ -415,21 +331,18 @@ function PricingSection() {
             className="m-0 font-extrabold tracking-tight text-foreground"
             style={{ fontSize: 'clamp(1.625rem, 3vw, 2.5rem)' }}
           >
-            Simple pricing
+            Start Building taylor made apps.
           </h2>
-          <p className="mt-3 mb-0 mx-auto max-w-sm text-base text-muted-foreground leading-relaxed">
-            Start free. Or jump in building with pro.
-          </p>
         </div>
 
         <div className="flex gap-5 justify-center items-start max-w-4xl mx-auto pt-3.5 max-[880px]:flex-col max-[880px]:items-center">
           <PricingCard
             label="Free"
             amount="$0"
-            period="/ forever"
+            period=""  
             tagline="Get started with no credit card required."
             features={FREE_FEATURES}
-            ctaLabel="Sign up free"
+            ctaLabel="Sign up"
           />
           <PricingCard
             label="Pro"
@@ -482,7 +395,6 @@ export function LandingPage() {
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <LandingNav />
       <HeroSection />
-      <ShowcaseSection />
       <PricingSection />
       <LandingFooter />
     </div>

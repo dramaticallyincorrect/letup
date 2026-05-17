@@ -7,19 +7,22 @@ a marketplace for user created app
 
 1. change title in long conversation lags
 2. submissions called multiple times
-3. ~~accounts~~
-   1. ~~free 15 credit one time only~~
-4. rename marketplace to app store
-5. terms of services
-6. privacy policy
-7. analytics
-8.  ~~landing page~~
-9.  optimize the new phase build system
-10. go through the core workflows and review the code
+3. limit free tier to 3 app installs
+4. annual pro subscription
+5. rename marketplace to app store
+6. terms of services
+7. privacy policy
+8. empty view for my apps
+9. analytics
+9. landing page
+   1. header when already signed in
+   2. add screen shot of my apps
+10. optimize the new phase build system
+11. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
-11. share console logs with ai
+12. share console logs with ai
    1. in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai
 
 ## check

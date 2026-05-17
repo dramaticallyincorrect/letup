@@ -6,26 +6,27 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Alert } from '@/components/ui/alert'
 import { AppIcon, TINT_STYLES } from './components/app-icon'
 import { AppPreview } from './app-preview'
-import { getAppGlyph, getAppTint, type AppTint } from './data'
+import { getAppGlyph, getAppTint } from './data'
 import {
   ArrowUp,
   AlertTriangle,
   Square,
   Sparkles,
-  ChevronRight,
   Check,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ErrorBoundary } from 'react-error-boundary'
 
+type ModelID = 'claude-opus-4-7' | 'claude-sonnet-4-6' | 'deepseek-v4-flash'
+
 type Model = {
-  id: string
+  id: ModelID
   label: string
   description: string
   provider: 'claude' | 'deepseek'
@@ -34,18 +35,14 @@ type Model = {
 const MODELS: Model[] = [
   { id: 'claude-opus-4-7', label: 'Opus 4.7', description: 'Most capable', provider: 'claude' },
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: 'Balanced — default', provider: 'claude' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', description: 'Cheap', provider: 'claude' },
-  { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro', description: 'Capable but slower - Discounted', provider: 'deepseek' },
-  { id: 'deepseek-v4-flash', label: 'DeepSeek v4 Flash', description: 'Cheap & fast - Discounted', provider: 'deepseek' },
+  ...(import.meta.env.DEV
+    ? [{ id: 'deepseek-v4-flash' as const, label: 'DeepSeek V4 Flash', description: 'Dev only', provider: 'deepseek' as const }]
+    : []),
+]
 
-] as const
-type ModelId = typeof MODELS[number]['id']
-const DEFAULT_MODEL: ModelId = 'claude-sonnet-4-6'
 
-const PROVIDER_TINT: Record<Model['provider'], AppTint> = {
-  claude: 'coral',
-  deepseek: 'sky',
-}
+
+const DEFAULT_MODEL: ModelID = 'claude-sonnet-4-6'
 
 const MORPH_GLYPHS = ['✦', '❀', '◐', '✿', '◈', '♫', '✷', '◆']
 
@@ -111,16 +108,18 @@ function ChatComposer({
   onModelChange,
   inputValue,
   setInputValue,
+  billing,
 }: {
   isSending: boolean
   currentActivity: string | null
   hasMessages: boolean
   onSend: (text: string) => void
   onStop: () => void
-  selectedModel: ModelId
-  onModelChange: (m: ModelId) => void
+  selectedModel: ModelID
+  onModelChange: (m: ModelID) => void
   inputValue: string
   setInputValue: (s: string) => void
+  billing: client.BillingStatus | undefined
 }) {
   function submit() {
     if (!inputValue.trim() || isSending) return
@@ -143,7 +142,7 @@ function ChatComposer({
           </div>
         </div>
       )}
-      <div className="bg-card border border-border/70 rounded-3xl px-4 pt-3.5 pb-3 shadow-[var(--shadow-md)] transition-all focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/20">
+      <div className="bg-card border border-border/70 rounded-3xl px-4 pt-3.5 pb-3 shadow-(--shadow-md) transition-all focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/20">
         <Textarea
           rows={1}
           placeholder={hasMessages ? 'Ask Claude to change something…' : 'Describe your app — what would you like to build?'}
@@ -161,7 +160,7 @@ function ChatComposer({
         <div className="flex items-center gap-1.5 mt-2">
           <Select
             value={selectedModel}
-            onValueChange={(v) => onModelChange(v as ModelId)}
+            onValueChange={(v) => onModelChange(v as ModelID)}
             disabled={isSending}
           >
             <SelectTrigger
@@ -175,11 +174,13 @@ function ChatComposer({
             <SelectContent
               position="popper" side="top" sideOffset={8} align="start" className='p-1.5'>
               {MODELS.map(m => (
-                <SelectItem key={m.id} value={m.id} className="py-2">
+                <SelectItem key={m.id} value={m.id} className="py-2" disabled={m.id === 'claude-opus-4-7' && billing?.plan !== 'pro'}>
                   <span className="flex items-center gap-2.5">
                     <span className="flex flex-col items-start">
                       <span className="text-sm">{m.label}</span>
-                      <span className="text-[11px] text-muted-foreground">{m.description}</span>
+                      {
+                        m.id === 'claude-opus-4-7' && billing?.plan !== 'pro' ? <span className="text-[11px] text-foreground">Upgrade to unlock</span> : <span className="text-[11px] text-muted-foreground">{m.description}</span>
+                      }
                     </span>
                   </span>
                 </SelectItem>
@@ -245,7 +246,7 @@ export function CreatePageInner({
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
   const [initError, setInitError] = useState<string | null>(null)
   const [lowCreditsBalance, setLowCreditsBalance] = useState<number | null>(null)
-  const [selectedModel, setSelectedModel] = useState<ModelId>(DEFAULT_MODEL)
+  const [selectedModel, setSelectedModel] = useState<ModelID>(DEFAULT_MODEL)
   const [inputValue, setInputValue] = useState('')
 
   const { data: billing } = useQuery({
@@ -506,7 +507,7 @@ export function CreatePageInner({
       <ResizablePanelGroup orientation="horizontal" >
         {/* Chat pane */}
         <ResizablePanel
-          defaultSize='38%'
+          defaultSize='30%'
           minSize='20%'
           className="flex flex-col min-h-0 bg-gradient-to-b from-card via-card to-[var(--warm)] relative"
         >
@@ -747,6 +748,7 @@ export function CreatePageInner({
             onModelChange={setSelectedModel}
             inputValue={inputValue}
             setInputValue={setInputValue}
+            billing={billing}
           />
         </ResizablePanel>
 
@@ -754,7 +756,7 @@ export function CreatePageInner({
 
         {/* Preview pane */}
         <ResizablePanel
-          defaultSize='62%'
+          defaultSize='70%'
           className="flex flex-col min-h-0 relative overflow-hidden"
           style={{ background: 'var(--warm)' } as React.CSSProperties}
         >
@@ -762,11 +764,11 @@ export function CreatePageInner({
             <div className="flex-1 flex items-center justify-center p-8 overflow-auto relative">
               {/* Drifting gradient blobs */}
               <div
-                className="absolute size-[28rem] rounded-full blur-3xl opacity-50 animate-gradient-drift pointer-events-none"
+                className="absolute size-112 rounded-full blur-3xl opacity-50 animate-gradient-drift pointer-events-none"
                 style={{ background: 'var(--tint-coral-bg)', top: '10%', left: '15%' }}
               />
               <div
-                className="absolute size-[24rem] rounded-full blur-3xl opacity-50 animate-gradient-drift-2 pointer-events-none"
+                className="absolute size-96 rounded-full blur-3xl opacity-50 animate-gradient-drift-2 pointer-events-none"
                 style={{ background: 'var(--tint-amber-bg)', bottom: '8%', right: '12%' }}
               />
 
