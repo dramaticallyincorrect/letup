@@ -4,14 +4,14 @@ import type { DB } from './db'
 import { aiUsageLogs } from './db/schema'
 
 // Micro-units per token by model, anchored to real Anthropic pricing.
-// Scale: 1 USD = 12,500,000 micro-units (haiku input $0.80/MTok → 10 mu/token).
+// Scale: 1 USD = 12,500,000 micro-units (haiku 4.5 input $1/MTok → 12.5 mu/token).
 // Unknown models fall back to haiku (cheapest) so new models never go untracked.
 const MODEL_RATES: Record<string, { input: number; output: number; cacheCreation: number; cacheRead: number }> = {
-  'claude-haiku-4-5':    { input: 10,    output: 50,   cacheCreation: 13,    cacheRead: 1       },
-  'claude-sonnet-4-6':   { input: 38,    output: 188,  cacheCreation: 47,    cacheRead: 4       },
-  'claude-opus-4-7':     { input: 188,   output: 938,  cacheCreation: 234,   cacheRead: 19      },
-  'deepseek-v4-flash':   { input: 1.75,  output: 3.5,  cacheCreation: 1.75,  cacheRead: 0.035   },
-  'deepseek-v4-pro':     { input: 21.75, output: 43.5, cacheCreation: 21.75, cacheRead: 0.18125 },
+  'claude-haiku-4-5':    { input: 12.5,  output: 62.5, cacheCreation: 15.625, cacheRead: 1.25    },
+  'claude-sonnet-4-6':   { input: 37.5,  output: 187.5,cacheCreation: 46.875, cacheRead: 3.75    },
+  'claude-opus-4-7':     { input: 62.5,  output: 312.5,cacheCreation: 78.125, cacheRead: 6.25    },
+  'deepseek-v4-flash':   { input: 1.75,  output: 3.5,  cacheCreation: 1.75,   cacheRead: 0.035   },
+  'deepseek-v4-pro':     { input: 21.75, output: 43.5, cacheCreation: 21.75,  cacheRead: 0.18125 },
 }
 
 const HAIKU_RATES = MODEL_RATES['claude-haiku-4-5']

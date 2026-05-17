@@ -6,18 +6,20 @@ a marketplace for user created app
 
 
 1. change title in long conversation lags
-2. ~~logged out -> sign up for premium~~
-3. ~~logged in -> upgrade to premium~~
-4. ~~account~~
-5. credit
-   1. credit top up
-6. ~~landing page~~
-7. optimize the new phase build system
-8. go through the core workflows and review the code
+2. submissions called multiple times
+3. map 100 credits to 7 dollars
+4. can we have app usage be free? maybe with paid apps already setup?
+5. rename marketplace to app store
+6. terms of services
+7. privacy policy
+8. analytics
+9. ~~landing page~~
+10. optimize the new phase build system
+11. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
-9. share console logs with ai
+12. share console logs with ai
    1. in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai
 
 ## check
@@ -39,6 +41,8 @@ a marketplace for user created app
 12. github to store versions
 10. plan when and how should apps be deleted, complete removal or always only marked as deleted
 11. official apps
+12. credit
+    1. credit top up
 
 
 
