@@ -471,14 +471,14 @@ function LandingFooter() {
           mini
         </div>
         <div className="flex gap-6">
-          {['Terms', 'Privacy'].map(l => (
-            <a
-              key={l}
-              href="#"
+          {([['Terms of Service', '/terms'], ['Privacy Policy', '/privacy'], ['Refund Policy', '/refund']] as const).map(([label, to]) => (
+            <Link
+              key={label}
+              to={to}
               className="text-sm font-medium text-muted-foreground no-underline hover:text-foreground transition-colors"
             >
-              {l}
-            </a>
+              {label}
+            </Link>
           ))}
         </div>
         <div className="text-sm text-muted-foreground">© {new Date().getFullYear()} Dramatically Incorrect</div>

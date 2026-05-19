@@ -10,8 +10,8 @@ a marketplace for user created app
 3. ~~limit free tier to 3 app installs~~
 4. ~~annual pro subscription~~
 5. rename marketplace to app store
-6. terms of services
-7. privacy policy
+6. ~~terms of services~~
+7. ~~privacy policy~~
 8. empty view for my apps
 9. analytics
 10. builder
