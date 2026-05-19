@@ -21,6 +21,11 @@ export class VirtualFS {
             const path = input.path as string
             const oldStr = input.old_str as string
             const newStr = input.new_str as string
+
+            if (newStr.match(/<button/)) {
+                console.log('Warning: Attempt to insert <button> tag detected.')
+                return { error: 'html primitives such as <button>, <input> tags are not allowed, use shadcn components like <Button> in components/ui/button.tsx' }
+            }
             if (oldStr === '') {
                 this.files.set(path, newStr)
                 return { success: true, path }
@@ -51,6 +56,25 @@ export class VirtualFS {
             const text = input.text as string
             const existing = this.files.get(path) ?? ''
             this.files.set(path, existing + text)
+            return { success: true, path }
+        },
+    }
+
+    writeFileTool = {
+        name: 'write_file',
+        description: 'Write text to a file, replacing its entire content. Creates the file if it does not exist.',
+        input_schema: {
+            type: 'object' as const,
+            properties: {
+                path: { type: 'string', description: 'File path relative to project root' },
+                text: { type: 'string', description: 'Text to write' },
+            },
+            required: ['path', 'text'],
+        },
+        handler: async (input: Record<string, unknown>) => {
+            const path = input.path as string
+            const text = input.text as string
+            this.files.set(path, text)
             return { success: true, path }
         },
     }

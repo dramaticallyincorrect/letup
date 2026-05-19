@@ -16,6 +16,7 @@ import { Fastify } from '../fastify_type'
 import { VirtualFS } from '../virtual-fs/virtual-fs'
 
 // System prompts — loaded once, wrapped with cache_control for prompt caching
+const PRODUCT_PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-product-plan.md'), 'utf8'))
 const PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
 const BUILD_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
 
@@ -52,6 +53,129 @@ const SCAFFOLD_COMPONENTS = [
   'table', 'tabs', 'textarea', 'toggle', 'toggle-group', 'tooltip',
 ]
 
+const BASE_STYLES_CSS = `@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+}
+`
+
 let scaffoldCache: Promise<Map<string, string>> | null = null
 
 function loadScaffoldFiles(): Promise<Map<string, string>> {
@@ -73,8 +197,17 @@ function loadScaffoldFiles(): Promise<Map<string, string>> {
         }
       }))
       console.log(`[scaffold] loaded ${files.size} default component files`)
-      files.set('index.tsx', '')
-      files.set('styles.css', '')
+      files.set('index.tsx',
+        `
+import React from 'react';
+// Standard shadcn/radix primivites available in /components/ui, do not try to read them unless there is a specific reason"
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+
+export default function App() {
+  return <div className="app-shell">Content coming...</div>;
+}`.trim())
+      files.set('styles.css', BASE_STYLES_CSS)
       return files
     })()
   }
@@ -955,15 +1088,38 @@ function buildApp(fastify: Fastify) {
       ]
 
 
-      // --- Planning phase (fresh builds only) ---
+      // --- Planning phases (fresh builds only) ---
       if (!isRefinement) {
-        const planResult = await runAgentLoop({
-          effort: 'medium',
+        // 1. Product plan — what to build (Opus, read-only)
+        sendEvent('phase_start', { name: 'product', index: 1, total: 3 })
+        buildMessages = await runAgentLoop({
+          effort: 'high',
           messages: [{ role: 'user', content: userMessage }],
           tools: [
             askUserTool,
+            appFs.readFileTool,
+            appFs.readFileRangeTool,
+            appFs.grepFileTool,
+            appFs.searchFilesTool,
+            appFs.listFilesTool,
+          ],
+          system: PRODUCT_PLAN_SYSTEM,
+          ...sharedAgentParams,
+          model: 'claude-sonnet-4-6',
+        })
+
+        sendEvent('phase_complete', { name: 'product', index: 1 })
+
+        await saveProgress(buildMessages)
+        // 2. Design plan — visual direction brief (Opus, read-only)
+        sendEvent('phase_start', { name: 'design', index: 2, total: 3 })
+        buildMessages = await runAgentLoop({
+          effort: 'low',
+          messages: [...buildMessages, { role: 'user', content: 'now implement the design system. here is the content of the styles.css, use the write_file tool to completly replace it with the new design' + '\n\n' + (appFs.files.get('styles.css') ?? '') }],
+          tools: [
+            askUserTool,
             appFs.strReplaceTool,
-            appFs.appendTextTool,
+            appFs.writeFileTool,
             appFs.readFileTool,
             appFs.readFileRangeTool,
             appFs.grepFileTool,
@@ -972,12 +1128,15 @@ function buildApp(fastify: Fastify) {
           ],
           system: PLAN_SYSTEM,
           ...sharedAgentParams,
+          model: 'claude-sonnet-4-6',
         })
-        const lastPlanMsg = planResult.findLast(m => m.role === 'assistant')
-        const planText = lastPlanMsg ? extractText(lastPlanMsg.content) : ''
-        if (planText) {
-          buildMessages = [{ role: 'user', content: `${userMessage}\n\n---\n## Design Plan\n\n${planText}` }]
-        }
+
+        sendEvent('phase_complete', { name: 'design', index: 2 })
+
+        // const planSections: string[] = []
+        // if (productPlanText) planSections.push(`## Product Plan\n\n${productPlanText}`)
+        // if (designPlanText) planSections.push(`## Design Plan\n\n${designPlanText}`)
+
         await saveProgress(buildMessages)
       }
 
@@ -990,6 +1149,9 @@ function buildApp(fastify: Fastify) {
       }
 
       async function runBuildWithRetry(msgs: Anthropic.MessageParam[]): Promise<Anthropic.MessageParam[]> {
+        const buildPhaseIndex = isRefinement ? 1 : 3
+        const buildPhaseTotal = isRefinement ? 1 : 3
+        sendEvent('phase_start', { name: 'build', index: buildPhaseIndex, total: buildPhaseTotal })
         let result = await runAgentLoop({ messages: msgs, ...buildLoopParams, effort: 'medium' })
         const MAX_COMPILE_RETRIES = 2
         for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
@@ -1009,10 +1171,11 @@ function buildApp(fastify: Fastify) {
           console.log(`Compile failed (attempt ${attempt + 1}/${MAX_COMPILE_RETRIES}), retrying agent loop with updated messages...`)
           result = await runAgentLoop({ messages: retryMsgs, ...buildLoopParams, effort: 'medium' })
         }
+        sendEvent('phase_complete', { name: 'build', index: buildPhaseIndex })
         return result
       }
 
-      allMessages = await runBuildWithRetry(buildMessages)
+      allMessages = await runBuildWithRetry([...markLastTurnCacheable(buildMessages), { role: 'user', content: 'now with the plan and design in place, its time to implement the app. no need to think anymore, start implementing, you can do a small amount of thinking before implementing a section, but not all upfront. iterativley as you implement each step.' }])
 
       await saveProgress(allMessages)
 
@@ -1021,6 +1184,7 @@ function buildApp(fastify: Fastify) {
         sendEvent('widget', updated)
       }
     } catch (err) {
+      compileAndPersist().catch(e => fastify.log.warn(e, 'failed to save progress after error'))
       const isAbort = ac.signal.aborted || (err instanceof Error && err.name === 'AbortError')
       if (isAbort) {
         for (const qid of sessionQuestionIds) pendingQuestions.delete(qid)

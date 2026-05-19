@@ -161,6 +161,7 @@ export async function runAgentLoop(params: {
           onText?.(event.delta.text)
         } else if (event.delta.type === 'thinking_delta') {
           onThinking?.(event.delta.thinking)
+          console.log(`[agent] received thinking delta for iteration ${iteration}: ${event.delta.thinking}`)
         } else if (event.delta.type === 'input_json_delta') {
           const block = toolUseBlocks.get(event.index)
           if (block) block.inputJson += event.delta.partial_json
@@ -175,7 +176,10 @@ export async function runAgentLoop(params: {
     await onUsage?.(finalMessage.usage, model, durationSeconds)
 
     if (finalMessage.stop_reason === 'max_tokens') {
-      throw new Error('Claude response exceeded max_tokens limit')
+      console.log(`[agent] reached max tokens for iteration ${iteration}, forcing stop and tool execution if needed`)
+      messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
+      messages.push({ role: 'user', content: [{ type: 'text', text: 'You reached the maximum number of tokens, stop thinking and start the implementation' }] })
+      continue;
     }
 
     messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
