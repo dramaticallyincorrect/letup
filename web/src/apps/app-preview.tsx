@@ -23,24 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { generateText, queryAppDb } from '@repo/data'
-import postcss from 'postcss'
-// @ts-expect-error — no type definitions for postcss-prefix-selector
-import prefixSelector from 'postcss-prefix-selector'
-
 const WIDGET_SCOPE = 'widget-root'
-
-function scopeCss(css: string): string {
-  return postcss([
-    prefixSelector({
-      prefix: `.${WIDGET_SCOPE}`,
-      transform(prefix: string, selector: string, prefixedSelector: string) {
-        if (selector === ':root') return prefix
-        if (selector === '.dark') return `.dark ${prefix}`
-        return prefixedSelector
-      },
-    }),
-  ]).process(css, { from: undefined }).css
-}
 
 const routerModule = {
   useRouter: () => {
@@ -96,7 +79,34 @@ export function AppPreview({
   const [Component, setComponent] = useState<React.ComponentType<{ data: Record<string, unknown> }> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Inject the design system CSS scoped to .widget-root, clean up on change
+  // Inject fallback CSS so Radix UI portal elements (Dialog, Select, Popover, etc.)
+  // are always correctly positioned regardless of what the widget's compiled CSS covers.
+  // This is a one-time static injection — no cleanup needed.
+  useEffect(() => {
+    // const id = 'widget-portal-base'
+    // if (document.getElementById(id)) return
+    // const style = document.createElement('style')
+    // style.id = id
+    // style.textContent = `
+    //   [data-slot="dialog-content"] {
+    //     position: fixed;
+    //     top: 50%;
+    //     left: 50%;
+    //     transform: translate(-50%, -50%);
+    //     z-index: 50;
+    //   }
+    //   [data-slot="dialog-overlay"] {
+    //     position: fixed;
+    //     inset: 0;
+    //     z-index: 50;
+    //     background-color: rgb(0 0 0 / 0.5);
+    //   }
+    // `
+    // document.head.appendChild(style)
+  }, [])
+
+  // Inject the design system CSS globally so both the widget and Radix UI portals
+  // (Dialog, Select, Popover, etc. rendered into document.body) get the correct styles.
   useEffect(() => {
     const styleId = 'widget-design-system'
     const existing = document.getElementById(styleId)
@@ -106,7 +116,7 @@ export function AppPreview({
 
     const style = document.createElement('style')
     style.id = styleId
-    style.textContent = scopeCss(cssCode)
+    style.textContent = cssCode
     style.dataset.widgetTransformed = 'true'
     document.head.appendChild(style)
 
@@ -125,7 +135,6 @@ export function AppPreview({
             node.dataset.widgetTransformed !== 'true' &&
             node.textContent
           ) {
-            node.textContent = scopeCss(node.textContent)
             node.dataset.widgetTransformed = 'true'
             node.dataset.widgetInjected = 'true'
           }

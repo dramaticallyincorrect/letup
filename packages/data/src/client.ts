@@ -194,6 +194,7 @@ export type BillingStatus = {
   currentPeriodEnd: string | null
   credits: number
   microUnitsBalance: string
+  billingCycle: 'monthly' | 'annual'
 }
 
 export async function getBillingStatus(): Promise<BillingStatus> {
@@ -203,6 +204,18 @@ export async function getBillingStatus(): Promise<BillingStatus> {
 
 export async function getBillingPortalUrl(): Promise<{ url: string }> {
   const res = await apiFetch('/billing/portal')
+  return res.json()
+}
+
+export type BillingPriceItem = { total: string; formatted: string; monthlyFormatted?: string }
+export type BillingPrices = {
+  currencyCode: string
+  monthly: BillingPriceItem | null
+  annual: BillingPriceItem | null
+}
+
+export async function getBillingPrices(): Promise<BillingPrices> {
+  const res = await apiFetch('/billing/prices')
   return res.json()
 }
 

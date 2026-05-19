@@ -1,0 +1,1 @@
+ALTER TABLE "user_subscriptions" ADD COLUMN "next_credit_refill_at" timestamp;

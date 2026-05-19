@@ -94,6 +94,8 @@ export const userSubscriptions = pgTable('user_subscriptions', {
   paddleSubscriptionId: text('paddle_subscription_id'),
   status: text('status').notNull().default('active'),      // 'active' | 'canceled' | 'past_due'
   currentPeriodEnd: timestamp('current_period_end'),
+  billingCycle: text('billing_cycle', { enum: ['monthly', 'annual'] }).notNull().default('monthly'),
+  nextCreditRefillAt: timestamp('next_credit_refill_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

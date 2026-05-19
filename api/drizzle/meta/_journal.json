@@ -99,6 +99,20 @@
       "when": 1778935672836,
       "tag": "0013_first_pepper_potts",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779186927312,
+      "tag": "0014_far_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1779188004476,
+      "tag": "0015_fancy_masked_marvel",
+      "breakpoints": true
     }
   ]
 }

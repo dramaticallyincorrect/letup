@@ -85,6 +85,9 @@ const paymentRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/payment',
   component: PaymentPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    billing: (search.billing === 'monthly' ? 'monthly' : 'annual') as 'monthly' | 'annual',
+  }),
 })
 
 const accountRoute = createRoute({

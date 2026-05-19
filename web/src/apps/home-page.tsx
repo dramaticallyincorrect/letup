@@ -216,13 +216,13 @@ function UpgradeBanner() {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-foreground m-0">Free plan · 3 app limit</p>
         <p className="text-xs text-muted-foreground m-0 mt-0.5">
-          Upgrade to Pro for unlimited apps and 100 credits / month.
+          Upgrade to Pro for unlimited apps and 100 monthly credits.
         </p>
       </div>
       <Button
         size="sm"
         className="rounded-full font-semibold shrink-0"
-        onClick={() => navigate({ to: '/payment' })}
+        onClick={() => navigate({ to: '/payment', search: { billing: 'annual' } })}
       >
         Upgrade to Pro
       </Button>

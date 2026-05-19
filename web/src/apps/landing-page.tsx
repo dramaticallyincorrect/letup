@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { CheckIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/auth-client'
+import { usePaddlePrices } from '@/lib/use-paddle-prices'
 
 const SHOWCASE_APPS = [
   { g: '📝', name: 'Meeting Notes', desc: 'Summarize and extract action items', tint: 'indigo' },
@@ -16,8 +18,6 @@ const SHOWCASE_APPS = [
   { g: '🍳', name: 'Recipe Box', desc: 'Generate recipes from ingredients', tint: 'amber' },
 ]
 
-const AVATAR_COLORS = ['#D97757', '#5B8DEF', '#3EBF8A', '#E8A838', '#A87ECF']
-
 const FREE_FEATURES = [
   '15 credits one-time',
   'Sonnet 4.6 only',
@@ -27,9 +27,8 @@ const FREE_FEATURES = [
 ]
 
 const PRO_FEATURES = [
-  '100 credits / month',
+  '100 monthly credits',
   'Advanced Models: Opus 4.7',
-  'Unlimited app builds',
   'Customize app store apps',
   'Unlimited apps',
   'Share your app in letup app store'
@@ -208,6 +207,9 @@ function PricingCard({
   featured,
   ctaLabel,
   onCtaClick,
+  annualAmount,
+  annualBilledNote,
+  discountBadge,
 }: {
   label: string
   amount: string
@@ -216,8 +218,15 @@ function PricingCard({
   features: string[]
   featured?: boolean
   ctaLabel: string
-  onCtaClick?: () => void
+  onCtaClick?: (billingCycle: 'monthly' | 'annual') => void
+  annualAmount?: string
+  annualBilledNote?: string
+  discountBadge?: string
 }) {
+  const [isAnnual, setIsAnnual] = useState(true)
+  const hasAnnual = !!annualAmount
+  const displayAmount = hasAnnual && isAnnual ? annualAmount : amount
+
   return (
     <Card
       className={`flex-1 flex flex-col relative rounded-2xl border overflow-visible ${featured
@@ -233,12 +242,71 @@ function PricingCard({
           {label}
         </p>
 
-        <div className="mt-3.5 flex items-baseline gap-1.5">
+        {hasAnnual && (
+          <div className="mt-3.5 flex items-center">
+            <div
+              className="inline-flex rounded-full p-0.5 text-xs font-semibold"
+              style={{
+                background: featured ? 'rgba(255,255,255,0.12)' : 'var(--secondary)',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setIsAnnual(true)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-3 py-1 transition-all',
+                  isAnnual
+                    ? featured
+                      ? 'bg-background text-foreground'
+                      : 'bg-foreground text-background'
+                    : 'text-inherit opacity-50',
+                )}
+              >
+                Annual
+                {discountBadge && (
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                    style={{
+                      background: isAnnual
+                        ? 'oklch(0.76 0.14 145 / 0.22)'
+                        : featured
+                          ? 'rgba(255,255,255,0.12)'
+                          : 'var(--tint-sage-bg)',
+                      color: isAnnual
+                        ? 'oklch(0.78 0.16 145)'
+                        : featured
+                          ? 'rgba(250,247,242,0.6)'
+                          : 'var(--tint-sage-fg)',
+                    }}
+                  >
+                    {discountBadge}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAnnual(false)}
+                className={cn(
+                  'rounded-full px-3 py-1 transition-all',
+                  !isAnnual
+                    ? featured
+                      ? 'bg-background text-foreground'
+                      : 'bg-foreground text-background'
+                    : 'opacity-50',
+                )}
+              >
+                Monthly
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className={cn('flex items-baseline gap-1.5', hasAnnual ? 'mt-3' : 'mt-3.5')}>
           <span
             className="text-5xl font-extrabold tracking-tighter leading-none"
             style={{ color: featured ? 'var(--background)' : 'var(--foreground)' }}
           >
-            {amount}
+            {displayAmount}
           </span>
           <span
             className="text-sm font-medium"
@@ -247,6 +315,14 @@ function PricingCard({
             {period}
           </span>
         </div>
+        {(hasAnnual && isAnnual && annualBilledNote) && (
+          <p
+            className="text-xs mt-1 mb-0"
+            style={{ color: featured ? 'rgba(250,247,242,0.4)' : 'var(--muted-foreground)' }}
+          >
+            {annualBilledNote}
+          </p>
+        )}
 
         <p
           className="text-sm mt-2.5 mb-0 leading-relaxed"
@@ -297,7 +373,7 @@ function PricingCard({
             : 'bg-secondary text-foreground border border-input hover:bg-secondary/80'
             }`}
           variant="ghost"
-          onClick={onCtaClick}
+          onClick={onCtaClick ? () => onCtaClick(isAnnual ? 'annual' : 'monthly') : undefined}
           asChild={!onCtaClick}
         >
           {onCtaClick ? ctaLabel : <Link to="/signup">{ctaLabel}</Link>}
@@ -312,11 +388,29 @@ function PricingSection() {
   const isLoggedIn = !!session?.user
   const navigate = useNavigate()
 
-  const goToCheckout = () => {
+  const prices = usePaddlePrices()
+
+  const monthlyDisplay = prices.monthly?.formatted ?? '$15'
+  const annualMonthlyDisplay = prices.annual?.monthlyFormatted ?? '$12.50'
+  const annualBilledNote = `billed ${prices.annual?.formatted ?? '$150'} annually`
+
+  const monthlyTotal = prices.monthly ? parseFloat(prices.monthly.total) : 15
+  const annualTotal = prices.annual ? parseFloat(prices.annual.total) : 150
+  const discountPct = Math.round((1 - annualTotal / (monthlyTotal * 12)) * 100)
+  const discountBadge = `${discountPct}% off`
+
+  const freeDisplay = new Intl.NumberFormat(navigator.language, {
+    style: 'currency',
+    currency: prices.currencyCode,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(0)
+
+  const goToCheckout = (billingCycle: 'monthly' | 'annual') => {
     if (isLoggedIn) {
-      navigate({ to: '/payment' })
+      navigate({ to: '/payment', search: { billing: billingCycle } })
     } else {
-      navigate({ to: '/signup', search: { next: '/payment' } as never })
+      navigate({ to: '/signup', search: { next: `/payment?billing=${billingCycle}` } as never })
     }
   }
 
@@ -338,16 +432,19 @@ function PricingSection() {
         <div className="flex gap-5 justify-center items-start max-w-4xl mx-auto pt-3.5 max-[880px]:flex-col max-[880px]:items-center">
           <PricingCard
             label="Free"
-            amount="$0"
-            period=""  
+            amount={freeDisplay}
+            period=""
             tagline="Get started with no credit card required."
             features={FREE_FEATURES}
             ctaLabel="Sign up"
           />
           <PricingCard
             label="Pro"
-            amount="$15"
+            amount={monthlyDisplay}
             period="/ month"
+            annualAmount={annualMonthlyDisplay}
+            annualBilledNote={annualBilledNote}
+            discountBadge={discountBadge}
             tagline="get the most out of letup with pro features"
             features={PRO_FEATURES}
             featured

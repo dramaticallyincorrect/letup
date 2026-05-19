@@ -1,12 +1,14 @@
 import { FastifyPluginAsync } from 'fastify'
-import { eq, sql } from 'drizzle-orm'
+import { eq, sql, lte, and } from 'drizzle-orm'
 import { Paddle, Environment, EventName } from '@paddle/paddle-node-sdk'
 import { Fastify } from '../fastify_type'
 import { userSubscriptions, userCredits } from '../db/schema'
 import { microUnitsToCredits } from '../credits'
 
-const PREMIUM_CREDITS = 125_000_000n // 100 credits × 1,250,000 mu/credit ($10 raw API cost)
-const FREE_CREDITS = 18_750_000n     // 15 credits  × 1,250,000 mu/credit ($1.50 raw API cost)
+const MONTHLY_CREDITS = 125_000_000n  // 100 credits × 1,250,000 mu/credit
+const FREE_CREDITS = 18_750_000n      // 15 credits  × 1,250,000 mu/credit
+
+const ANNUAL_PRICE_ID = process.env.ANNUAL_PREMIUM_PRICE_ID ?? ''
 
 const paddle = new Paddle(process.env.PADDLE_API_KEY!, {
   environment: process.env.PADDLE_ENVIRONMENT === 'production'
@@ -16,7 +18,9 @@ const paddle = new Paddle(process.env.PADDLE_API_KEY!, {
 
 const billingPlugin: FastifyPluginAsync = async (fastify) => {
   getBillingStatus(fastify as Fastify)
+  getBillingPrices(fastify as Fastify)
   getBillingPortal(fastify as Fastify)
+  annualCreditRefill(fastify as Fastify)
   void fastify.register(webhookPlugin)
 }
 
@@ -42,7 +46,145 @@ function getBillingStatus(fastify: Fastify) {
       currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
       credits,
       microUnitsBalance,
+      billingCycle: subscription?.billingCycle ?? 'monthly',
     })
+  })
+}
+
+// Currencies Paddle treats as zero-decimal (amount already in major units)
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA',
+  'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
+])
+
+// Region → currency fallback for when IP is private/localhost
+const REGION_CURRENCY: Record<string, string> = {
+  AT: 'EUR', BE: 'EUR', CY: 'EUR', DE: 'EUR', EE: 'EUR', ES: 'EUR',
+  FI: 'EUR', FR: 'EUR', GR: 'EUR', HR: 'EUR', IE: 'EUR', IT: 'EUR',
+  LT: 'EUR', LU: 'EUR', LV: 'EUR', MT: 'EUR', NL: 'EUR', PT: 'EUR',
+  SI: 'EUR', SK: 'EUR', GB: 'GBP', AU: 'AUD', CA: 'CAD', NZ: 'NZD',
+  JP: 'JPY', CN: 'CNY', IN: 'INR', BR: 'BRL', MX: 'MXN', CH: 'CHF',
+  SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN', CZ: 'CZK', HU: 'HUF',
+  RO: 'RON', SG: 'SGD', HK: 'HKD', KR: 'KRW', TH: 'THB',
+}
+
+function isPrivateIp(ip: string): boolean {
+  return !ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.')
+}
+
+function currencyFromAcceptLanguage(header: string): string | undefined {
+  // Extract region from first locale tag, e.g. "de-DE,de;q=0.9" → "DE"
+  const tag = header.split(',')[0].trim()
+  const region = tag.includes('-') ? tag.split('-').pop()?.toUpperCase() : undefined
+  return region ? REGION_CURRENCY[region] : undefined
+}
+
+function minorToMajor(minorUnits: string, currencyCode: string): number {
+  const value = parseFloat(minorUnits)
+  return ZERO_DECIMAL_CURRENCIES.has(currencyCode.toUpperCase()) ? value : value / 100
+}
+
+function getBillingPrices(fastify: Fastify) {
+  fastify.get('/billing/prices', async (request, reply) => {
+    const monthlyPriceId = process.env.MONTHLY_PREMIUM_PRICE
+    const annualPriceId = process.env.ANNUAL_PREMIUM_PRICE_ID
+
+    const items: { priceId: string; quantity: number }[] = []
+    if (monthlyPriceId) items.push({ priceId: monthlyPriceId, quantity: 1 })
+    if (annualPriceId) items.push({ priceId: annualPriceId, quantity: 1 })
+
+    if (items.length === 0) {
+      return reply.send({ monthly: null, annual: null, currencyCode: 'USD' })
+    }
+
+    const preview = await paddle.pricingPreview.preview({
+      items,
+      customerIpAddress: request.ip ?? null,
+    })
+
+    const currency = preview.currencyCode as string
+    const locale = (request.headers['accept-language'] ?? 'en-US').split(',')[0]
+    const byPriceId = new Map(
+      preview.details.lineItems.map(item => [item.price.id, item]),
+    )
+
+    const monthlyItem = monthlyPriceId ? byPriceId.get(monthlyPriceId) : undefined
+    const annualItem = annualPriceId ? byPriceId.get(annualPriceId) : undefined
+
+    const annualMinor = annualItem ? parseFloat(annualItem.totals.total) : null
+    const monthlyMinor = monthlyItem ? parseFloat(monthlyItem.totals.total) : null
+
+    // Compute annual/12 in major units and format matching the user's locale
+    const decimals = ZERO_DECIMAL_CURRENCIES.has(currency.toUpperCase()) ? 0 : 2
+    const annualMonthlyFormatted = annualMinor !== null
+      ? new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency,
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      }).format(annualMinor / (decimals === 0 ? 1 : 100) / 12)
+      : null
+
+    return reply.send({
+      currencyCode: currency,
+      monthly: monthlyMinor !== null
+        ? {
+          total: String(minorToMajor(String(monthlyMinor), currency)),
+          formatted: monthlyItem!.formattedTotals.total,
+        }
+        : null,
+      annual: annualMinor !== null
+        ? {
+          total: String(minorToMajor(String(annualMinor), currency)),
+          formatted: annualItem!.formattedTotals.total,
+          monthlyFormatted: annualMonthlyFormatted,
+        }
+        : null,
+    })
+  })
+}
+
+function annualCreditRefill(fastify: Fastify) {
+  fastify.post('/billing/cron/refill', async (request, reply) => {
+    const secret = process.env.CRON_SECRET
+    if (!secret || request.headers.authorization !== `Bearer ${secret}`) {
+      return reply.status(401).send({ error: 'unauthorized' })
+    }
+
+    const now = new Date()
+
+    const due = await fastify.db
+      .select({ userId: userSubscriptions.userId, nextCreditRefillAt: userSubscriptions.nextCreditRefillAt })
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.plan, 'pro'),
+          eq(userSubscriptions.status, 'active'),
+          eq(userSubscriptions.billingCycle, 'annual'),
+          lte(userSubscriptions.nextCreditRefillAt, now),
+        ),
+      )
+
+    for (const sub of due) {
+      const nextRefill = new Date(sub.nextCreditRefillAt!)
+      nextRefill.setMonth(nextRefill.getMonth() + 1)
+
+      await Promise.all([
+        fastify.db
+          .insert(userCredits)
+          .values({ userId: sub.userId, balance: MONTHLY_CREDITS, updatedAt: now })
+          .onConflictDoUpdate({
+            target: userCredits.userId,
+            set: { balance: MONTHLY_CREDITS, updatedAt: now },
+          }),
+        fastify.db
+          .update(userSubscriptions)
+          .set({ nextCreditRefillAt: nextRefill, updatedAt: now })
+          .where(eq(userSubscriptions.userId, sub.userId)),
+      ])
+    }
+
+    return reply.send({ refilled: due.length })
   })
 }
 
@@ -108,6 +250,13 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
   if (eventType === EventName.SubscriptionCreated) {
     if (!userId) return
 
+    const priceId: string | undefined = data.items?.[0]?.price?.id
+    const billingCycle = priceId && ANNUAL_PRICE_ID && priceId === ANNUAL_PRICE_ID ? 'annual' : 'monthly'
+
+    const now = new Date()
+    const nextRefill = new Date(now)
+    nextRefill.setMonth(nextRefill.getMonth() + 1)
+
     await Promise.all([
       fastify.db
         .insert(userSubscriptions)
@@ -117,10 +266,12 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
           status: 'active',
           paddleCustomerId: data.customerId,
           paddleSubscriptionId: data.id,
+          billingCycle,
+          nextCreditRefillAt: billingCycle === 'annual' ? nextRefill : null,
           currentPeriodEnd: data.currentBillingPeriod?.endsAt
             ? new Date(data.currentBillingPeriod.endsAt)
             : null,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .onConflictDoUpdate({
           target: userSubscriptions.userId,
@@ -129,24 +280,31 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
             status: 'active',
             paddleCustomerId: data.customerId,
             paddleSubscriptionId: data.id,
+            billingCycle,
+            nextCreditRefillAt: billingCycle === 'annual' ? nextRefill : null,
             currentPeriodEnd: data.currentBillingPeriod?.endsAt
               ? new Date(data.currentBillingPeriod.endsAt)
               : null,
-            updatedAt: new Date(),
+            updatedAt: now,
           },
         }),
       fastify.db
         .insert(userCredits)
-        .values({ userId, balance: PREMIUM_CREDITS, updatedAt: new Date() })
+        .values({ userId, balance: MONTHLY_CREDITS, updatedAt: now })
         .onConflictDoUpdate({
           target: userCredits.userId,
-          set: { balance: PREMIUM_CREDITS, updatedAt: new Date() },
+          set: { balance: MONTHLY_CREDITS, updatedAt: now },
         }),
     ])
   }
 
   if (eventType === EventName.SubscriptionUpdated) {
     if (!userId) return
+
+    const [existing] = await fastify.db
+      .select({ billingCycle: userSubscriptions.billingCycle })
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId))
 
     await fastify.db
       .update(userSubscriptions)
@@ -159,14 +317,14 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
       })
       .where(eq(userSubscriptions.userId, userId))
 
-    // Top up credits on each billing renewal
-    if (data.status === 'active') {
+    // Top up credits on monthly renewal only; annual refills are handled by the cron endpoint
+    if (data.status === 'active' && existing?.billingCycle !== 'annual') {
       await fastify.db
         .insert(userCredits)
-        .values({ userId, balance: PREMIUM_CREDITS, updatedAt: new Date() })
+        .values({ userId, balance: MONTHLY_CREDITS, updatedAt: new Date() })
         .onConflictDoUpdate({
           target: userCredits.userId,
-          set: { balance: PREMIUM_CREDITS, updatedAt: new Date() },
+          set: { balance: MONTHLY_CREDITS, updatedAt: new Date() },
         })
     }
   }

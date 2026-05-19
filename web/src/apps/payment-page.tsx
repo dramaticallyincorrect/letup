@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { initializePaddle, type Paddle } from '@paddle/paddle-js'
 import { useSession } from '@/lib/auth-client'
 import { CheckIcon, ArrowLeftIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { usePaddlePrices } from '@/lib/use-paddle-prices'
 
 const PRO_FEATURES = [
   '100 Claude credits / month',
@@ -16,9 +18,22 @@ const PRO_FEATURES = [
 export function PaymentPage() {
   const navigate = useNavigate()
   const { data: session, isPending } = useSession()
+  const { billing } = useSearch({ from: '/payment' })
   const paddleRef = useRef<Paddle | null>(null)
   const openedRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
+  const [isAnnual, setIsAnnual] = useState(billing !== 'monthly')
+
+  const prices = usePaddlePrices()
+
+  const monthlyTotal = prices.monthly ? parseFloat(prices.monthly.total) : 15
+  const annualTotal = prices.annual ? parseFloat(prices.annual.total) : 150
+  const discountPct = Math.round((1 - annualTotal / (monthlyTotal * 12)) * 100)
+
+  const displayAmount = isAnnual
+    ? (prices.annual?.monthlyFormatted ?? '$12.50')
+    : (prices.monthly?.formatted ?? '$15')
+  const annualBilledNote = `billed ${prices.annual?.formatted ?? '$150'} annually`
 
   useEffect(() => {
     if (isPending) return
@@ -30,7 +45,9 @@ export function PaymentPage() {
   useEffect(() => {
     if (!session?.user || openedRef.current) return
 
-    const priceId = import.meta.env.VITE_PADDLE_PRICE_ID
+    const priceId = isAnnual
+      ? import.meta.env.VITE_PADDLE_ANNUAL_PRICE_ID
+      : import.meta.env.VITE_PADDLE_MONTHLY_PRICE_ID
     const token = import.meta.env.VITE_PADDLE_CLIENT
     const environment = (import.meta.env.VITE_PADDLE_ENVIRONMENT ?? 'sandbox') as 'sandbox' | 'production'
 
@@ -72,6 +89,32 @@ export function PaymentPage() {
     })
   }, [session, navigate])
 
+  const handleBillingToggle = (annual: boolean) => {
+    if (annual === isAnnual) return
+    setIsAnnual(annual)
+
+    const priceId = annual
+      ? import.meta.env.VITE_PADDLE_ANNUAL_PRICE_ID
+      : import.meta.env.VITE_PADDLE_MONTHLY_PRICE_ID
+
+    if (!priceId) {
+      setError('Paddle is not configured.')
+      return
+    }
+
+    paddleRef.current?.Checkout.open({
+      settings: {
+        displayMode: 'inline',
+        frameTarget: 'paddle-checkout-frame',
+        frameInitialHeight: 450,
+        frameStyle: 'width:100%; min-height:450px; background:transparent; border:none;',
+      },
+      items: [{ priceId, quantity: 1 }],
+      customData: { userId: session?.user?.id } as Record<string, unknown>,
+      customer: session?.user?.email ? { email: session.user.email } : undefined,
+    })
+  }
+
   if (isPending || !session?.user) {
     return (
       <div className="min-h-screen bg-background grid place-items-center text-sm text-muted-foreground">
@@ -110,12 +153,49 @@ export function PaymentPage() {
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2.5">
               Upgrade
             </p>
-            <h1 className="text-3xl font-extrabold tracking-tight mb-2">Pro plan</h1>
-            <div className="flex items-baseline gap-1.5 mb-6">
-              <span className="text-4xl font-extrabold">$15</span>
+            <h1 className="text-3xl font-extrabold tracking-tight mb-4">Pro plan</h1>
+
+            {/* Billing toggle */}
+            <div className="inline-flex rounded-full p-0.5 mb-4 text-sm font-semibold bg-secondary">
+              <button
+                type="button"
+                onClick={() => handleBillingToggle(true)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-4 py-1.5 transition-all',
+                  isAnnual ? 'bg-foreground text-background' : 'text-muted-foreground',
+                )}
+              >
+                Annual
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                  style={{
+                    background: isAnnual ? 'oklch(0.76 0.14 145 / 0.22)' : 'var(--tint-sage-bg)',
+                    color: isAnnual ? 'oklch(0.78 0.16 145)' : 'var(--tint-sage-fg)',
+                  }}
+                >
+                  {discountPct}% off
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBillingToggle(false)}
+                className={cn(
+                  'rounded-full px-4 py-1.5 transition-all',
+                  !isAnnual ? 'bg-foreground text-background' : 'text-muted-foreground',
+                )}
+              >
+                Monthly
+              </button>
+            </div>
+
+            <div className="flex items-baseline gap-1.5 mb-1">
+              <span className="text-4xl font-extrabold">{displayAmount}</span>
               <span className="text-sm text-muted-foreground">/ month</span>
             </div>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+            {isAnnual && (
+              <p className="text-xs text-muted-foreground mb-5">{annualBilledNote}</p>
+            )}
+            <p className={`text-sm text-muted-foreground leading-relaxed ${isAnnual ? '' : 'mt-5'} mb-6`}>
               Get the most out of letup with pro features. Cancel anytime.
             </p>
             <div className="flex flex-col gap-2">
