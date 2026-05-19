@@ -7,7 +7,7 @@ a marketplace for user created app
 
 1. change title in long conversation lags
 2. submissions called multiple times
-3. limit free tier to 3 app installs
+3. ~~limit free tier to 3 app installs~~
 4. annual pro subscription
 5. rename marketplace to app store
 6. terms of services

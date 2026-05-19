@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify'
-import { eq, desc, sql, and } from 'drizzle-orm'
-import { apps, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats } from '../db/schema'
+import { eq, desc, sql, and, countDistinct } from 'drizzle-orm'
+import { apps, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats, userSubscriptions } from '../db/schema'
 import { user as users } from '../db/auth-schema'
 import { Fastify } from '../fastify_type'
 
@@ -203,6 +203,24 @@ function installMarketplaceListing(fastify: Fastify) {
       if (!latestVersion) return reply.status(400).send({ error: 'App has no published version' })
 
       const userId = request.assertAuthenticated()
+
+      const [sub] = await fastify.db
+        .select({ plan: userSubscriptions.plan })
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.userId, userId))
+        .limit(1)
+
+      if (!sub || sub.plan === 'free') {
+        const [{ count }] = await fastify.db
+          .select({ count: countDistinct(appVersions.appId) })
+          .from(userAppInstalls)
+          .innerJoin(appVersions, eq(userAppInstalls.versionId, appVersions.id))
+          .where(eq(userAppInstalls.userId, userId))
+
+        if (count >= 3) {
+          return reply.status(403).send({ error: 'Free plan is limited to 3 installed apps. Uninstall one or upgrade to Pro.' })
+        }
+      }
 
       await fastify.db
         .insert(userAppInstalls)

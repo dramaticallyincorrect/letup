@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join, posix } from 'node:path'
 import { compile } from '@tailwindcss/node'
-import { and, desc, eq, isNotNull, max, or, sql } from 'drizzle-orm'
+import { and, countDistinct, desc, eq, isNotNull, max, or, sql } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
@@ -516,6 +516,24 @@ function installApp(fastify: Fastify) {
       .limit(1)
 
     if (app?.creatorId !== userId) return reply.code(403).send({ error: 'Forbidden' })
+
+    const [sub] = await fastify.db
+      .select({ plan: userSubscriptions.plan })
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId))
+      .limit(1)
+
+    if (!sub || sub.plan === 'free') {
+      const [{ count }] = await fastify.db
+        .select({ count: countDistinct(appVersions.appId) })
+        .from(userAppInstalls)
+        .innerJoin(appVersions, eq(userAppInstalls.versionId, appVersions.id))
+        .where(eq(userAppInstalls.userId, userId))
+
+      if (count >= 3) {
+        return reply.code(403).send({ error: 'Free plan is limited to 3 installed apps. Uninstall one or upgrade to Pro.' })
+      }
+    }
 
     const [draftVersion] = await fastify.db
       .select({ id: appVersions.id, versionNumber: appVersions.versionNumber })

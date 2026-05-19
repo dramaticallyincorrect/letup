@@ -16,9 +16,10 @@ type Props = {
   onClose: () => void
   onInstall: (listing: MarketplaceListing) => void
   installing?: boolean
+  installDisabled?: boolean
 }
 
-export function AppPreviewDialog({ listing, onClose, onInstall, installing }: Props) {
+export function AppPreviewDialog({ listing, onClose, onInstall, installing, installDisabled }: Props) {
   const tint = listing ? getAppTint(listing.appId) : 'indigo'
   const glyph = listing ? getAppGlyph(listing.appName) : ''
 
@@ -86,7 +87,8 @@ export function AppPreviewDialog({ listing, onClose, onInstall, installing }: Pr
           <Button
             size="sm"
             onClick={() => listing && onInstall(listing)}
-            disabled={installing || !listing}
+            disabled={installing || !listing || installDisabled}
+            title={installDisabled ? 'Free plan allows 3 apps — uninstall one or upgrade to Pro' : undefined}
           >
             <DownloadIcon size={14} />
             {installing ? 'Installing…' : 'Install app'}

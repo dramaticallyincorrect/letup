@@ -214,7 +214,7 @@ function UpgradeBanner() {
         <SparklesIcon size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground m-0">Free plan · 1 app limit</p>
+        <p className="text-sm font-semibold text-foreground m-0">Free plan · 3 app limit</p>
         <p className="text-xs text-muted-foreground m-0 mt-0.5">
           Upgrade to Pro for unlimited apps and 100 credits / month.
         </p>

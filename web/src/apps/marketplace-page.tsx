@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import * as client from '@repo/data'
 import type { MarketplaceListing } from '@repo/data'
+import { useSession } from '@/lib/auth-client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Chrome } from './components/chrome'
 import { AppIcon } from './components/app-icon'
@@ -22,10 +23,29 @@ export function MarketplacePage() {
   const [selectedListing, setSelectedListing] = useState<MarketplaceListing | null>(null)
   const [installing, setInstalling] = useState(false)
 
+  const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
+
   const { data: listings = [] } = useQuery({
     queryKey: ['marketplace-listings'],
     queryFn: client.getMarketplaceListings,
   })
+
+  const { data: billing } = useQuery({
+    queryKey: ['billing-status'],
+    queryFn: client.getBillingStatus,
+    enabled: isLoggedIn,
+    retry: false,
+  })
+
+  const { data: myApps = [] } = useQuery({
+    queryKey: ['widgets'],
+    queryFn: client.getApps,
+    enabled: isLoggedIn,
+  })
+
+  const installedCount = myApps.filter(a => a.latestVersionNumber > 0).length
+  const atInstallLimit = billing?.plan === 'free' && installedCount >= 3
 
   const filteredListings = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -42,6 +62,10 @@ export function MarketplacePage() {
       await client.installMarketplaceListing(listing.appId)
       setToast(`${listing.appName} added to your apps`)
       setSelectedListing(null)
+    } catch (err: any) {
+      if (err?.status === 403) {
+        setToast('Free plan limit reached — uninstall an app or upgrade to Pro')
+      }
     } finally {
       setInstalling(false)
     }
@@ -118,8 +142,10 @@ export function MarketplacePage() {
                           <span>{l.totalInstalls.toLocaleString()} installs</span>
                         </>
                       )}
-                      <Button variant='secondary' size='xs' className="ml-auto" onClick={e => { e.stopPropagation(); handleInstallListing(l) }}>
-                        Install
+                      <Button variant='secondary' size='xs' className="ml-auto" disabled={atInstallLimit} onClick={e => { e.stopPropagation(); handleInstallListing(l) }}>
+                        {
+                          atInstallLimit ? 'Install limit reached' : 'Install'
+                        }
                       </Button>
                     </div>
                   </CardContent>
@@ -135,6 +161,7 @@ export function MarketplacePage() {
         onClose={() => setSelectedListing(null)}
         onInstall={handleInstallListing}
         installing={installing}
+        installDisabled={atInstallLimit}
       />
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </div>

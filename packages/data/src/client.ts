@@ -6,7 +6,11 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     credentials: 'include',
     ...init,
   })
-  if (!res.ok) throw new Error(`API error ${res.status}: ${path}`)
+  if (!res.ok) {
+    const err = new Error(`API error ${res.status}: ${path}`) as Error & { status: number }
+    err.status = res.status
+    throw err
+  }
   return res
 }
 
