@@ -1312,7 +1312,7 @@ function getAppUsage(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId } = request.params
-    const userId = request.assertAuthenticated()
+    request.assertAdmin()
 
     const app = await fastify.db
       .select({ creatorId: apps.creatorId })
@@ -1320,7 +1320,6 @@ function getAppUsage(fastify: Fastify) {
       .where(eq(apps.id, appId))
       .limit(1)
     if (!app[0]) return reply.code(404).send({ error: 'App not found' })
-    if (app[0].creatorId !== userId) return reply.code(403).send({ error: 'Forbidden' })
 
     const rows = await fastify.db
       .select({

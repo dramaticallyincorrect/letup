@@ -59,6 +59,7 @@ export const marketplaceListings = pgTable('marketplace_listings', {
   appVersionId: uuid('app_version_id').notNull().unique().references(() => appVersions.id, { onDelete: 'cascade' }),
   category: text('category').notNull(),
   description: text('description').notNull(),
+  model: text('model'),
 })
 
 export const marketplaceStats = pgTable('marketplace_stats', {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from '@tanstack/react-router'
+import { useParams, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import * as client from '@repo/data'
 import { microUnitsToUsd } from '@repo/data'
@@ -10,17 +10,32 @@ import { cn } from '@/lib/utils'
 
 export function UsagePage() {
   const { appId } = useParams({ from: '/apps/$appId/usage' })
+  const navigate = useNavigate()
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
 
-  const { data: versions = [], isPending } = useQuery({
+  const { data: user, isPending: userPending } = useQuery({
+    queryKey: ['me'],
+    queryFn: client.getUser,
+  })
+
+  const { data: versions = [], isPending: versionsPending } = useQuery({
     queryKey: ['app-usage', appId],
     queryFn: () => client.getAppUsage(appId),
+    enabled: !!user?.isAdmin,
   })
 
   const { data: app } = useQuery({
     queryKey: ['app', appId],
     queryFn: () => client.getApp(appId),
+    enabled: !!user?.isAdmin,
   })
+
+  if (!userPending && user && !user.isAdmin) {
+    navigate({ to: '/home' })
+    return null
+  }
+
+  const isPending = userPending || versionsPending
 
   function toggleVersion(versionId: string) {
     setExpandedVersions(prev => {

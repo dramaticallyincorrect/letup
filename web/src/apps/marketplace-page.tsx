@@ -14,7 +14,15 @@ import {
   getAppGlyph,
 } from './data'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { SearchIcon } from 'lucide-react'
+
+function getModelBadge(model: string | null): { label: string; className: string } | null {
+  if (!model) return null
+  if (model.startsWith('claude')) return { label: 'Built with Claude', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-0' }
+  if (model.startsWith('deepseek')) return { label: 'Built with DeepSeek', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border-0' }
+  return null
+}
 
 export function MarketplacePage() {
   const [category, setCategory] = useState('All')
@@ -120,6 +128,7 @@ export function MarketplacePage() {
             {filteredListings.map(l => {
               const tint = getAppTint(l.appId)
               const glyph = getAppGlyph(l.appName)
+              const modelBadge = getModelBadge(l.model)
               return (
                 <Card
                   key={l.id}
@@ -127,9 +136,19 @@ export function MarketplacePage() {
                   onClick={() => setSelectedListing(l)}
                 >
                   <CardContent className="p-5 flex flex-col gap-4">
-                    <AppIcon tint={tint} glyph={glyph} />
+                    <div className='flex flex-row items-center'>
+                      <AppIcon tint={tint} glyph={glyph} />
+                      <div className='flex-1'></div>
+                      {modelBadge && (
+                        <Badge className={`text-[11px] px-1.5 py-0 shrink-0 font-medium ${modelBadge.className}`}>
+                          {modelBadge.label}
+                        </Badge>
+                      )}
+                    </div>
                     <div>
-                      <h3 className="font-bold text-base text-foreground tracking-[-0.01em] m-0">{l.appName}</h3>
+                      <div className="flex items-start justify-between gap-2 mb-0.5">
+                        <h3 className="font-bold text-base text-foreground tracking-[-0.01em] m-0">{l.appName}</h3>
+                      </div>
                       <p className="text-[13.5px] leading-normal text-muted-foreground mt-1 line-clamp-2 m-0">
                         {l.description}
                       </p>

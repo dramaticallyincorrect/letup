@@ -113,6 +113,13 @@
       "when": 1779188004476,
       "tag": "0015_fancy_masked_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779191518348,
+      "tag": "0017_sparkling_sprite",
+      "breakpoints": true
     }
   ]
 }

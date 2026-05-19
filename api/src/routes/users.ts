@@ -12,7 +12,8 @@ function getUser(fastify: Fastify) {
     const userId = request.assertAuthenticated()
     const [user] = await fastify.db.select().from(userTable).where(eq(userTable.id, userId))
     if (!user) return reply.code(404).send({ error: 'user not found' })
-    return reply.send(user)
+    const isAdmin = !!(process.env.ADMIN_EMAIL && request.userEmail === process.env.ADMIN_EMAIL)
+    return reply.send({ ...user, isAdmin })
   })
 }
 

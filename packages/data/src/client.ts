@@ -46,6 +46,7 @@ export type User = {
   email: string
   handle: string
   displayName: string
+  isAdmin: boolean
   createdAt: string
   updatedAt: string
 }
@@ -300,11 +301,17 @@ export type MarketplaceSubmission = {
   updatedAt: string
 }
 
+export type AdminSubmission = MarketplaceSubmission & {
+  appName: string
+  submitterHandle: string
+}
+
 export type MarketplaceListing = {
   id: string
   appId: string
   category: string
   description: string
+  model: string | null
   appName: string
   appCreatorHandle: string
   totalInstalls: number
@@ -334,6 +341,37 @@ export async function getAppSubmission(appId: string): Promise<MarketplaceSubmis
 
 export async function approveSubmission(submissionId: string): Promise<MarketplaceListing> {
   const res = await apiFetch(`/marketplace/submissions/${submissionId}/approve`, { method: 'POST' })
+  return res.json()
+}
+
+export async function rejectSubmission(submissionId: string): Promise<void> {
+  await apiFetch(`/marketplace/submissions/${submissionId}/reject`, { method: 'POST' })
+}
+
+export async function getAdminSubmissions(): Promise<AdminSubmission[]> {
+  const res = await apiFetch('/marketplace/submissions')
+  return res.json()
+}
+
+export type SafeHistoryEntry =
+  | { kind: 'user_message'; text: string }
+  | { kind: 'assistant_text'; text: string }
+  | { kind: 'file_action'; tool: string; path: string }
+  | { kind: 'ask_user'; question: string; suggestions?: string[] }
+  | { kind: 'user_answer'; answer: string }
+
+export type SubmissionHistory = {
+  appName: string
+  submitterHandle: string
+  category: string
+  description: string
+  status: SubmissionStatus
+  createdAt: string
+  history: SafeHistoryEntry[]
+}
+
+export async function getSubmissionHistory(submissionId: string): Promise<SubmissionHistory> {
+  const res = await apiFetch(`/marketplace/submissions/${submissionId}/history`)
   return res.json()
 }
 

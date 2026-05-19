@@ -25,6 +25,11 @@ export function DashboardPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [submitModal, setSubmitModal] = useState<SubmitModalState | null>(null)
 
+  const { data: user } = useQuery({
+    queryKey: ['me'],
+    queryFn: client.getUser,
+  })
+
   const { data: apps = [], isPending } = useQuery({
     queryKey: ['created-apps'],
     queryFn: client.getCreatedApps,
@@ -86,12 +91,12 @@ export function DashboardPage() {
             <p>No apps yet — create your first one!</p>
           </div>
         ) : (
-          <div className="border border-border rounded-(--radius-lg) overflow-hidden">
+          <div className="border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-secondary/40">
                   <th className="text-left px-5 py-3 font-semibold text-muted-foreground">App</th>
-                  <th className="text-left px-5 py-3 font-semibold text-muted-foreground">Submission</th>
+                  <th className=" px-5 py-3 font-semibold text-center text-muted-foreground">Submission</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
@@ -118,14 +123,14 @@ export function DashboardPage() {
                           <div>
                             <div className="font-semibold text-foreground">{app.name}</div>
                             {app.description && (
-                              <div className="text-[12px] text-muted-foreground line-clamp-1 max-w-[360px]">
+                              <div className="text-[12px] text-muted-foreground line-clamp-1 max-w-90">
                                 {app.description}
                               </div>
                             )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-4 items-center text-center">
                         {isApproved && (
                           <Badge
                             variant="secondary"
@@ -145,16 +150,18 @@ export function DashboardPage() {
                           </Badge>
                         )}
                         {!submission && (
-                          <span className="text-[12px] text-muted-foreground">—</span>
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-5 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button size="sm" variant="ghost" asChild>
-                            <Link to="/apps/$appId/usage" params={{ appId: app.id }}>
-                              Usage
-                            </Link>
-                          </Button>
+                          {user?.isAdmin && (
+                            <Button size="sm" variant="ghost" asChild>
+                              <Link to="/apps/$appId/usage" params={{ appId: app.id }}>
+                                Usage
+                              </Link>
+                            </Button>
+                          )}
                           {isApproved ? (
                             <span className="text-[12px] text-muted-foreground">In marketplace</span>
                           ) : (

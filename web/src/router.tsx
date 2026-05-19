@@ -16,6 +16,8 @@ import { SignupPage } from './apps/auth/signup-page'
 import { LoginPage } from './apps/auth/login-page'
 import { PaymentPage } from './apps/payment-page'
 import { AccountPage } from './apps/account-page'
+import { AdminPage } from './apps/admin-page'
+import { AdminSubmissionPage } from './apps/admin-submission-page'
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -96,6 +98,18 @@ const accountRoute = createRoute({
   component: AccountPage,
 })
 
+const adminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/admin',
+  component: AdminPage,
+})
+
+const adminSubmissionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/admin/submissions/$submissionId',
+  component: AdminSubmissionPage,
+})
+
 const routeTree = rootRoute.addChildren([
   landingRoute,
   homeRoute,
@@ -109,6 +123,8 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   paymentRoute,
   accountRoute,
+  adminRoute,
+  adminSubmissionRoute,
 ])
 
 export const router = createRouter({

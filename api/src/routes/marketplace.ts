@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { eq, desc, sql, and, countDistinct } from 'drizzle-orm'
-import { apps, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats, userSubscriptions } from '../db/schema'
+import { apps, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats, userSubscriptions, aiUsageLogs } from '../db/schema'
 import { user as users } from '../db/auth-schema'
 import { Fastify } from '../fastify_type'
 
@@ -8,9 +8,11 @@ const marketplacePlugin: FastifyPluginAsync = async (fastify): Promise<void> => 
   submitApp(fastify)
   getAppSubmission(fastify)
   approveSubmission(fastify)
+  rejectSubmission(fastify)
   getMarketplaceListings(fastify)
   installMarketplaceListing(fastify)
   getSubmissions(fastify)
+  getSubmissionHistory(fastify)
 }
 
 function submitApp(fastify: Fastify) {
@@ -98,6 +100,7 @@ function approveSubmission(fastify: Fastify) {
       },
     },
     async (request, reply) => {
+      request.assertAdmin()
       const { submissionId } = request.params
 
       const [submission] = await fastify.db
@@ -113,6 +116,14 @@ function approveSubmission(fastify: Fastify) {
         .set({ status: 'approved', approvedAt: new Date(), updatedAt: new Date() })
         .where(eq(marketplaceSubmissions.id, submissionId))
 
+      const [buildLog] = await fastify.db
+        .select({ model: aiUsageLogs.model })
+        .from(aiUsageLogs)
+        .where(and(eq(aiUsageLogs.appVersionId, submission.versionId), eq(aiUsageLogs.source, 'build')))
+        .orderBy(desc(aiUsageLogs.createdAt))
+        .limit(1)
+      const model = buildLog?.model ?? null
+
       const existing = await fastify.db
         .select()
         .from(marketplaceListings)
@@ -122,19 +133,52 @@ function approveSubmission(fastify: Fastify) {
       if (existing.length > 0) {
         const [updated] = await fastify.db
           .update(marketplaceListings)
-          .set({ category: submission.category, description: submission.description, appVersionId: submission.versionId })
+          .set({ category: submission.category, description: submission.description, appVersionId: submission.versionId, model })
           .where(eq(marketplaceListings.appId, submission.appId))
           .returning()
         listing = updated
       } else {
         const [inserted] = await fastify.db
           .insert(marketplaceListings)
-          .values({ appId: submission.appId, category: submission.category, description: submission.description, appVersionId: submission.versionId })
+          .values({ appId: submission.appId, category: submission.category, description: submission.description, appVersionId: submission.versionId, model })
           .returning()
         listing = inserted
       }
 
       return reply.status(200).send(listing)
+    },
+  )
+}
+
+function rejectSubmission(fastify: Fastify) {
+  fastify.post<{ Params: { submissionId: string } }>(
+    '/marketplace/submissions/:submissionId/reject',
+    {
+      schema: {
+        tags: ['marketplace', 'submissions'],
+        summary: 'Reject a marketplace submission (admin)',
+        params: { type: 'object', properties: { submissionId: { type: 'string' } }, required: ['submissionId'] },
+      },
+    },
+    async (request, reply) => {
+      request.assertAdmin()
+      const { submissionId } = request.params
+
+      const [submission] = await fastify.db
+        .select()
+        .from(marketplaceSubmissions)
+        .where(eq(marketplaceSubmissions.id, submissionId))
+
+      if (!submission) return reply.status(404).send({ error: 'Submission not found' })
+      if (submission.status === 'rejected') return reply.status(400).send({ error: 'Already rejected' })
+
+      const [updated] = await fastify.db
+        .update(marketplaceSubmissions)
+        .set({ status: 'rejected', updatedAt: new Date() })
+        .where(eq(marketplaceSubmissions.id, submissionId))
+        .returning()
+
+      return reply.status(200).send(updated)
     },
   )
 }
@@ -155,6 +199,7 @@ function getMarketplaceListings(fastify: Fastify) {
           appId: marketplaceListings.appId,
           category: marketplaceListings.category,
           description: marketplaceListings.description,
+          model: marketplaceListings.model,
           appName: apps.name,
           appCreatorHandle: users.handle,
           totalInstalls: sql<number>`coalesce(sum(${marketplaceStats.installs}), 0)`.mapWith(Number),
@@ -246,14 +291,145 @@ function getSubmissions(fastify: Fastify) {
     {
       schema: {
         tags: ['marketplace', 'submissions'],
-        summary: 'List all marketplace submissions',
+        summary: 'List all marketplace submissions (admin)',
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      request.assertAdmin()
+
       const rows = await fastify.db
-        .select().from(marketplaceSubmissions)
+        .select({
+          id: marketplaceSubmissions.id,
+          appId: marketplaceSubmissions.appId,
+          versionId: marketplaceSubmissions.versionId,
+          submittedBy: marketplaceSubmissions.submittedBy,
+          category: marketplaceSubmissions.category,
+          description: marketplaceSubmissions.description,
+          status: marketplaceSubmissions.status,
+          approvedAt: marketplaceSubmissions.approvedAt,
+          createdAt: marketplaceSubmissions.createdAt,
+          updatedAt: marketplaceSubmissions.updatedAt,
+          appName: apps.name,
+          submitterHandle: users.handle,
+        })
+        .from(marketplaceSubmissions)
+        .innerJoin(apps, eq(apps.id, marketplaceSubmissions.appId))
+        .innerJoin(users, eq(users.id, marketplaceSubmissions.submittedBy))
+        .orderBy(desc(marketplaceSubmissions.createdAt))
 
       return reply.send(rows)
+    },
+  )
+}
+
+// ── Conversation history sanitisation ──────────────────────────────────────
+
+const CODE_TOOLS = new Set([
+  'write_file', 'str_replace', 'append_text',
+  'read_file', 'read_file_range', 'list_files',
+  'grep_file', 'search_files', 'setup_database',
+])
+
+type SafeHistoryEntry =
+  | { kind: 'user_message'; text: string }
+  | { kind: 'assistant_text'; text: string }
+  | { kind: 'file_action'; tool: string; path: string }
+  | { kind: 'ask_user'; question: string; suggestions?: string[] }
+  | { kind: 'user_answer'; answer: string }
+
+function sanitizeHistory(raw: unknown[]): SafeHistoryEntry[] {
+  const entries: SafeHistoryEntry[] = []
+  const toolNames = new Map<string, string>() // tool_use_id → tool name
+
+  for (const msg of raw) {
+    const m = msg as { role: string; content: unknown }
+
+    if (m.role === 'user') {
+      if (typeof m.content === 'string') {
+        entries.push({ kind: 'user_message', text: m.content })
+      } else if (Array.isArray(m.content)) {
+        for (const block of m.content as { type: string; text?: string; tool_use_id?: string; content?: unknown }[]) {
+          if (block.type === 'text' && block.text) {
+            entries.push({ kind: 'user_message', text: block.text })
+          } else if (block.type === 'tool_result' && toolNames.get(block.tool_use_id ?? '') === 'ask_user') {
+            let answer = ''
+            if (typeof block.content === 'string') {
+              try { answer = (JSON.parse(block.content) as { answer?: string }).answer ?? block.content } catch { answer = block.content }
+            }
+            entries.push({ kind: 'user_answer', answer })
+          }
+          // all other tool_results contain code — skip
+        }
+      }
+    } else if (m.role === 'assistant') {
+      const blocks = typeof m.content === 'string'
+        ? [{ type: 'text', text: m.content }]
+        : (m.content as unknown[])
+
+      for (const block of blocks as { type: string; text?: string; id?: string; name?: string; input?: unknown }[]) {
+        if (block.type === 'text' && block.text) {
+          entries.push({ kind: 'assistant_text', text: block.text })
+        } else if (block.type === 'tool_use' && block.name) {
+          toolNames.set(block.id ?? '', block.name)
+          if (block.name === 'ask_user') {
+            const input = block.input as { question?: string; suggestions?: string[] }
+            entries.push({ kind: 'ask_user', question: input?.question ?? '', suggestions: input?.suggestions })
+          } else if (CODE_TOOLS.has(block.name)) {
+            const input = block.input as Record<string, unknown>
+            const path = String(input?.path ?? input?.file_path ?? input?.filename ?? '')
+            entries.push({ kind: 'file_action', tool: block.name, path })
+          }
+          // thinking blocks (type === 'thinking') are silently dropped
+        }
+      }
+    }
+  }
+
+  return entries
+}
+
+function getSubmissionHistory(fastify: Fastify) {
+  fastify.get<{ Params: { submissionId: string } }>(
+    '/marketplace/submissions/:submissionId/history',
+    {
+      schema: {
+        tags: ['marketplace', 'submissions'],
+        summary: 'Get sanitised conversation history for a submission (admin)',
+        params: { type: 'object', properties: { submissionId: { type: 'string' } }, required: ['submissionId'] },
+      },
+    },
+    async (request, reply) => {
+      request.assertAdmin()
+      const { submissionId } = request.params
+
+      const [row] = await fastify.db
+        .select({
+          appId: marketplaceSubmissions.appId,
+          appName: apps.name,
+          submitterHandle: users.handle,
+          category: marketplaceSubmissions.category,
+          description: marketplaceSubmissions.description,
+          status: marketplaceSubmissions.status,
+          createdAt: marketplaceSubmissions.createdAt,
+          conversationHistory: apps.conversationHistory,
+        })
+        .from(marketplaceSubmissions)
+        .innerJoin(apps, eq(apps.id, marketplaceSubmissions.appId))
+        .innerJoin(users, eq(users.id, marketplaceSubmissions.submittedBy))
+        .where(eq(marketplaceSubmissions.id, submissionId))
+
+      if (!row) return reply.status(404).send({ error: 'Submission not found' })
+
+      const history = Array.isArray(row.conversationHistory) ? row.conversationHistory : []
+      return reply.send({
+        appName: row.appName,
+        submitterHandle: row.submitterHandle,
+        category: row.category,
+        description: row.description,
+        status: row.status,
+        createdAt: row.createdAt,
+        history: sanitizeHistory(history),
+      })
     },
   )
 }
