@@ -617,10 +617,15 @@ function resolveVirtualPath(importerPath: string, importPath: string, files: Map
 
 function extractTailwindCandidates(files: Map<string, string>): string[] {
   const candidates = new Set<string>()
+  // Match Tailwind class candidates including arbitrary values like translate-x-[-50%],
+  // top-[50%], max-w-[calc(100%-2rem)], bg-black/50, etc.
+  // The pattern: optional prefix like "sm:", then a utility with optional [value] and /modifier.
+  const classPattern = /(?:[\w-]+:)?[\w-]+(?:\[[^\]]*\])?(?:\/[\w.]+)?/g
   for (const [path, content] of files) {
     if (!/\.(tsx?|jsx?)$/.test(path)) continue
-    for (const token of content.split(/[\s"'`{};,<>=+&|^~!()[\]]+/)) {
-      if (token.length > 1 && token.length < 100) candidates.add(token)
+    for (const match of content.matchAll(classPattern)) {
+      const token = match[0]
+      if (token.length > 1 && token.length < 200) candidates.add(token)
     }
   }
   return [...candidates]
@@ -1088,12 +1093,9 @@ function buildApp(fastify: Fastify) {
       ]
 
 
-      // --- Planning phases (fresh builds only) ---
       if (!isRefinement) {
-        // 1. Product plan — what to build (Opus, read-only)
-        sendEvent('phase_start', { name: 'product', index: 1, total: 3 })
         buildMessages = await runAgentLoop({
-          effort: 'high',
+          effort: 'medium',
           messages: [{ role: 'user', content: userMessage }],
           tools: [
             askUserTool,
@@ -1105,16 +1107,13 @@ function buildApp(fastify: Fastify) {
           ],
           system: PRODUCT_PLAN_SYSTEM,
           ...sharedAgentParams,
-          model: 'claude-sonnet-4-6',
+          model: 'claude-opus-4-7',
         })
 
-        sendEvent('phase_complete', { name: 'product', index: 1 })
 
         await saveProgress(buildMessages)
-        // 2. Design plan — visual direction brief (Opus, read-only)
-        sendEvent('phase_start', { name: 'design', index: 2, total: 3 })
         buildMessages = await runAgentLoop({
-          effort: 'low',
+          effort: 'medium',
           messages: [...buildMessages, { role: 'user', content: 'now implement the design system. here is the content of the styles.css, use the write_file tool to completly replace it with the new design' + '\n\n' + (appFs.files.get('styles.css') ?? '') }],
           tools: [
             askUserTool,
@@ -1128,14 +1127,8 @@ function buildApp(fastify: Fastify) {
           ],
           system: PLAN_SYSTEM,
           ...sharedAgentParams,
-          model: 'claude-sonnet-4-6',
+          model: 'claude-opus-4-7',
         })
-
-        sendEvent('phase_complete', { name: 'design', index: 2 })
-
-        // const planSections: string[] = []
-        // if (productPlanText) planSections.push(`## Product Plan\n\n${productPlanText}`)
-        // if (designPlanText) planSections.push(`## Design Plan\n\n${designPlanText}`)
 
         await saveProgress(buildMessages)
       }
@@ -1149,9 +1142,6 @@ function buildApp(fastify: Fastify) {
       }
 
       async function runBuildWithRetry(msgs: Anthropic.MessageParam[]): Promise<Anthropic.MessageParam[]> {
-        const buildPhaseIndex = isRefinement ? 1 : 3
-        const buildPhaseTotal = isRefinement ? 1 : 3
-        sendEvent('phase_start', { name: 'build', index: buildPhaseIndex, total: buildPhaseTotal })
         let result = await runAgentLoop({ messages: msgs, ...buildLoopParams, effort: 'medium' })
         const MAX_COMPILE_RETRIES = 2
         for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
@@ -1171,11 +1161,10 @@ function buildApp(fastify: Fastify) {
           console.log(`Compile failed (attempt ${attempt + 1}/${MAX_COMPILE_RETRIES}), retrying agent loop with updated messages...`)
           result = await runAgentLoop({ messages: retryMsgs, ...buildLoopParams, effort: 'medium' })
         }
-        sendEvent('phase_complete', { name: 'build', index: buildPhaseIndex })
         return result
       }
 
-      allMessages = await runBuildWithRetry([...markLastTurnCacheable(buildMessages), { role: 'user', content: 'now with the plan and design in place, its time to implement the app. no need to think anymore, start implementing, you can do a small amount of thinking before implementing a section, but not all upfront. iterativley as you implement each step.' }])
+      allMessages = await runBuildWithRetry([...markLastTurnCacheable(buildMessages), { role: 'user', content: 'execute the implementation' }])
 
       await saveProgress(allMessages)
 
@@ -1192,7 +1181,7 @@ function buildApp(fastify: Fastify) {
         if (!reply.raw.writableEnded) sendEvent('cancelled', {})
         fastify.log.info({ appId, buildSessionId }, 'app build cancelled by client')
       } else if (err instanceof InsufficientCreditsError) {
-        sendEvent('error', { code: 'insufficient_credits', message: 'Insufficient credits' })
+        sendEvent('error', { code: 'insufficient_credits', message: 'You have run out of credits, add more credits from account page to continue.' })
       } else {
         fastify.log.error(err, 'app build error')
         sendEvent('error', { message: err instanceof Error ? err.message : 'Unknown error' })

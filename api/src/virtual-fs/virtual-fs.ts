@@ -24,7 +24,7 @@ export class VirtualFS {
 
             if (newStr.match(/<button/)) {
                 console.log('Warning: Attempt to insert <button> tag detected.')
-                return { error: 'html primitives such as <button>, <input> tags are not allowed, use shadcn components like <Button> in components/ui/button.tsx' }
+                return { error: 'html primitives for example <button>, <input> or any other tag that has an equivalent shadcn component are not allowed, use the corresponding shadcn components like <Button> in components/ui/' }
             }
             if (oldStr === '') {
                 this.files.set(path, newStr)
