@@ -63,7 +63,7 @@ export function DashboardPage() {
 
   async function handleSubmitted() {
     await queryClient.invalidateQueries({ queryKey: ['dashboard-submissions'] })
-    setToast(`"${submitModal?.appName}" submitted to marketplace`)
+    setToast(`"${submitModal?.appName}" submitted to app store`)
     setSubmitModal(null)
   }
 
@@ -77,7 +77,7 @@ export function DashboardPage() {
             Your <span className="text-accent">Dashboard</span>
           </h1>
           <p className="text-[15px] text-muted-foreground m-0">
-            Manage and publish your apps to the marketplace
+            Manage and publish your apps to the app store
           </p>
         </div>
 
@@ -163,7 +163,7 @@ export function DashboardPage() {
                             </Button>
                           )}
                           {isApproved ? (
-                            <span className="text-[12px] text-muted-foreground">In marketplace</span>
+                            <span className="text-[12px] text-muted-foreground">In app store</span>
                           ) : (
                             <Button
                               size="sm"
@@ -171,7 +171,7 @@ export function DashboardPage() {
                               disabled={!canSubmit}
                               onClick={() => openSubmitModal(app)}
                             >
-                              {app.isDraft !== false ? 'Draft — publish first' : isPending ? 'Resubmit' : 'Submit to marketplace'}
+                              {app.isDraft !== false ? 'Draft — publish first' : isPending ? 'Resubmit' : 'Submit to app store'}
                             </Button>
                           )}
                         </div>
@@ -243,7 +243,7 @@ function SubmitModal({
     <Modal
       open
       onClose={onClose}
-      title={<>Submit "{appName}" to marketplace</>}
+      title={<>Submit "{appName}" to app store</>}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>

@@ -222,7 +222,7 @@ export async function getBillingPrices(): Promise<BillingPrices> {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-export async function getUser(userId: string): Promise<User> {
+export async function getUser(): Promise<User> {
   const res = await apiFetch(`/me`)
   return res.json()
 }

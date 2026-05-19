@@ -41,7 +41,7 @@ export function Chrome({ active }: Props) {
               active === 'marketplace' && 'text-foreground bg-secondary',
             )}
           >
-            Marketplace
+            App Store
           </Link>
           <Link
             to="/dashboard"

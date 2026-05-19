@@ -87,7 +87,7 @@ export function MarketplacePage() {
         <div className="flex items-end justify-between gap-6 mb-9">
           <div>
             <h1 className="text-[34px] font-bold tracking-tight mb-1.5 text-foreground leading-none">
-              The <span className="text-accent not-italic">marketplace</span>
+              The <span className="text-accent not-italic">App Store</span>
             </h1>
             <p className="text-[15px] text-muted-foreground m-0">
               Hand-picked apps built by the community

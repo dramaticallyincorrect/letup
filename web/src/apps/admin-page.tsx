@@ -49,7 +49,7 @@ export function AdminPage() {
     try {
       await client.approveSubmission(submissionId)
       await queryClient.invalidateQueries({ queryKey: ['admin-submissions'] })
-      setToast(`"${appName}" approved and published to marketplace`)
+      setToast(`"${appName}" approved and published to app store`)
     } catch {
       setToast('Failed to approve submission')
     } finally {

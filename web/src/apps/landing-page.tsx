@@ -97,7 +97,7 @@ function LandingNav() {
         {[
           { label: 'Features', href: '#features' },
           { label: 'Pricing', href: '#pricing' },
-          { label: 'Marketplace', href: '/marketplace' },
+          { label: 'App Store', href: '/marketplace' },
         ].map(({ label, href }) => (
           <a
             key={label}
