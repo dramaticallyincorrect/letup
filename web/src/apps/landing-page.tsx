@@ -26,8 +26,16 @@ const FREE_FEATURES = [
   'Share your app in letup app store'
 ]
 
-const PRO_FEATURES = [
-  '100 monthly credits',
+const PRO_FEATURES_MONTHLY = [
+  '100 credits / month',
+  'Advanced Models: Opus 4.7',
+  'Customize app store apps',
+  'Unlimited apps',
+  'Share your app in letup app store'
+]
+
+const PRO_FEATURES_ANNUAL = [
+  '1,200 credits upfront',
   'Advanced Models: Opus 4.7',
   'Customize app store apps',
   'Unlimited apps',
@@ -205,6 +213,7 @@ function PricingCard({
   tagline,
   features,
   featured,
+  annualFeatures,
   ctaLabel,
   onCtaClick,
   annualAmount,
@@ -216,6 +225,7 @@ function PricingCard({
   period: string
   tagline: string
   features: string[]
+  annualFeatures?: string[]
   featured?: boolean
   ctaLabel: string
   onCtaClick?: (billingCycle: 'monthly' | 'annual') => void
@@ -226,6 +236,7 @@ function PricingCard({
   const [isAnnual, setIsAnnual] = useState(true)
   const hasAnnual = !!annualAmount
   const displayAmount = hasAnnual && isAnnual ? annualAmount : amount
+  const displayFeatures = hasAnnual && isAnnual && annualFeatures ? annualFeatures : features
 
   return (
     <Card
@@ -337,7 +348,7 @@ function PricingCard({
         />
 
         <div className="flex flex-col gap-0.5">
-          {features.map(f => (
+          {displayFeatures.map(f => (
             <div key={f} className="flex items-center gap-3 py-1">
               <div
                 className="size-4.5 rounded-full grid place-items-center shrink-0"
@@ -446,7 +457,8 @@ function PricingSection() {
             annualBilledNote={annualBilledNote}
             discountBadge={discountBadge}
             tagline="get the most out of letup with pro features"
-            features={PRO_FEATURES}
+            features={PRO_FEATURES_MONTHLY}
+            annualFeatures={PRO_FEATURES_ANNUAL}
             featured
             ctaLabel="Get Pro"
             onCtaClick={goToCheckout}

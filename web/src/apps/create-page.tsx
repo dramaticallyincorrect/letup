@@ -509,7 +509,7 @@ export function CreatePageInner({
         <ResizablePanel
           defaultSize='30%'
           minSize='20%'
-          className="flex flex-col min-h-0 bg-gradient-to-b from-card via-card to-[var(--warm)] relative"
+          className="flex flex-col min-h-0 bg-linear-to-b from-card via-card to-(--warm) relative"
         >
           {/* Chat header */}
           <div className="px-5 py-3.5 flex items-center gap-3 shrink-0 relative">
@@ -704,7 +704,7 @@ export function CreatePageInner({
                       {m.status === 'building' ? (
                         <span className="size-1.5 rounded-full bg-current animate-pulse" />
                       ) : (
-                        <Check className="size-3 stroke-[3]" />
+                        <Check className="size-3 stroke-3" />
                       )}
                       {m.name}
                     </span>

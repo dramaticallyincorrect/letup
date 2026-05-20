@@ -1,12 +1,13 @@
 import { FastifyPluginAsync } from 'fastify'
-import { eq, sql, lte, and } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { Paddle, Environment, EventName } from '@paddle/paddle-node-sdk'
 import { Fastify } from '../fastify_type'
 import { userSubscriptions, userCredits } from '../db/schema'
 import { microUnitsToCredits } from '../credits'
 
-const MONTHLY_CREDITS = 125_000_000n  // 100 credits × 1,250,000 mu/credit
-const FREE_CREDITS = 18_750_000n      // 15 credits  × 1,250,000 mu/credit
+const MONTHLY_CREDITS = 125_000_000n   // 100 credits  × 1,250,000 mu/credit
+const ANNUAL_CREDITS  = 1_500_000_000n // 1200 credits × 1,250,000 mu/credit
+const FREE_CREDITS    = 18_750_000n    // 15 credits   × 1,250,000 mu/credit
 
 const ANNUAL_PRICE_ID = process.env.ANNUAL_PREMIUM_PRICE_ID ?? ''
 
@@ -20,7 +21,6 @@ const billingPlugin: FastifyPluginAsync = async (fastify) => {
   getBillingStatus(fastify as Fastify)
   getBillingPrices(fastify as Fastify)
   getBillingPortal(fastify as Fastify)
-  annualCreditRefill(fastify as Fastify)
   void fastify.register(webhookPlugin)
 }
 
@@ -144,50 +144,6 @@ function getBillingPrices(fastify: Fastify) {
   })
 }
 
-function annualCreditRefill(fastify: Fastify) {
-  fastify.post('/billing/cron/refill', async (request, reply) => {
-    const secret = process.env.CRON_SECRET
-    if (!secret || request.headers.authorization !== `Bearer ${secret}`) {
-      return reply.status(401).send({ error: 'unauthorized' })
-    }
-
-    const now = new Date()
-
-    const due = await fastify.db
-      .select({ userId: userSubscriptions.userId, nextCreditRefillAt: userSubscriptions.nextCreditRefillAt })
-      .from(userSubscriptions)
-      .where(
-        and(
-          eq(userSubscriptions.plan, 'pro'),
-          eq(userSubscriptions.status, 'active'),
-          eq(userSubscriptions.billingCycle, 'annual'),
-          lte(userSubscriptions.nextCreditRefillAt, now),
-        ),
-      )
-
-    for (const sub of due) {
-      const nextRefill = new Date(sub.nextCreditRefillAt!)
-      nextRefill.setMonth(nextRefill.getMonth() + 1)
-
-      await Promise.all([
-        fastify.db
-          .insert(userCredits)
-          .values({ userId: sub.userId, balance: MONTHLY_CREDITS, updatedAt: now })
-          .onConflictDoUpdate({
-            target: userCredits.userId,
-            set: { balance: MONTHLY_CREDITS, updatedAt: now },
-          }),
-        fastify.db
-          .update(userSubscriptions)
-          .set({ nextCreditRefillAt: nextRefill, updatedAt: now })
-          .where(eq(userSubscriptions.userId, sub.userId)),
-      ])
-    }
-
-    return reply.send({ refilled: due.length })
-  })
-}
-
 function getBillingPortal(fastify: Fastify) {
   fastify.get('/billing/portal', async (request, reply) => {
     const userId = request.assertAuthenticated()
@@ -254,8 +210,7 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
     const billingCycle = priceId && ANNUAL_PRICE_ID && priceId === ANNUAL_PRICE_ID ? 'annual' : 'monthly'
 
     const now = new Date()
-    const nextRefill = new Date(now)
-    nextRefill.setMonth(nextRefill.getMonth() + 1)
+    const creditsToAllocate = billingCycle === 'annual' ? ANNUAL_CREDITS : MONTHLY_CREDITS
 
     await Promise.all([
       fastify.db
@@ -267,7 +222,7 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
           paddleCustomerId: data.customerId,
           paddleSubscriptionId: data.id,
           billingCycle,
-          nextCreditRefillAt: billingCycle === 'annual' ? nextRefill : null,
+          nextCreditRefillAt: null,
           currentPeriodEnd: data.currentBillingPeriod?.endsAt
             ? new Date(data.currentBillingPeriod.endsAt)
             : null,
@@ -281,7 +236,7 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
             paddleCustomerId: data.customerId,
             paddleSubscriptionId: data.id,
             billingCycle,
-            nextCreditRefillAt: billingCycle === 'annual' ? nextRefill : null,
+            nextCreditRefillAt: null,
             currentPeriodEnd: data.currentBillingPeriod?.endsAt
               ? new Date(data.currentBillingPeriod.endsAt)
               : null,
@@ -290,10 +245,10 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
         }),
       fastify.db
         .insert(userCredits)
-        .values({ userId, balance: MONTHLY_CREDITS, updatedAt: now })
+        .values({ userId, balance: creditsToAllocate, updatedAt: now })
         .onConflictDoUpdate({
           target: userCredits.userId,
-          set: { balance: MONTHLY_CREDITS, updatedAt: now },
+          set: { balance: creditsToAllocate, updatedAt: now },
         }),
     ])
   }
@@ -317,14 +272,14 @@ async function handleWebhookEvent(fastify: Fastify, event: { eventType: string; 
       })
       .where(eq(userSubscriptions.userId, userId))
 
-    // Top up credits on monthly renewal only; annual refills are handled by the cron endpoint
-    if (data.status === 'active' && existing?.billingCycle !== 'annual') {
+    if (data.status === 'active') {
+      const credits = existing?.billingCycle === 'annual' ? ANNUAL_CREDITS : MONTHLY_CREDITS
       await fastify.db
         .insert(userCredits)
-        .values({ userId, balance: MONTHLY_CREDITS, updatedAt: new Date() })
+        .values({ userId, balance: credits, updatedAt: new Date() })
         .onConflictDoUpdate({
           target: userCredits.userId,
-          set: { balance: MONTHLY_CREDITS, updatedAt: new Date() },
+          set: { balance: credits, updatedAt: new Date() },
         })
     }
   }

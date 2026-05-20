@@ -13,21 +13,26 @@ a marketplace for user created app
 6. ~~terms of services~~
 7. ~~privacy policy~~
 8. empty view for my apps
-9. analytics
-10. builder
-    1.  back to ask questions to clarify
-    2.  try one with plan + thinking and one without
-    3.  research context optimizations
-11. landing page
+9. edit not opening on first try
+10. share console logs with ai
+   1. in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai
+11. analytics
+12. builder
+    1.  include border and shadow in default styles.css
+    2.  give build tool
+    3.  try Todo tool
+    4.  try having db and ai module out of prompt and on demand
+    5.  https://gemini.google.com/app/f49e77135be7c241
+    6.  back to ask questions to clarify
+    7.  try one with plan + thinking and one without
+    8.  research context optimizations
+13. landing page
    1. header when already signed in
    2. add screen shot of my apps
-12. optimize the new phase build system
-13. go through the core workflows and review the code
+14. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
-14. share console logs with ai
-   1. in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai
 
 ## check
 
