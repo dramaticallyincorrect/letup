@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
 import { useParams } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import * as client from '@repo/data'
 import { CreatePageInner, type ChatMessage } from './create-page'
 
@@ -53,20 +53,18 @@ function historyToChatMessages(history: unknown[]): ChatMessage[] {
 
 export function EditPage() {
   const { appId } = useParams({ from: '/apps/$appId/edit' })
-  const [app, setApp] = useState<client.AppDetail | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    client.createDraft(appId)
-      .then(() => client.getAppForEdit(appId))
-      .then(setApp)
-      .catch(() => setError('Failed to load app. Please go back and try again.'))
-  }, [appId])
+  const { data: app, isError } = useQuery({
+    queryKey: ['edit-app', appId],
+    queryFn: () => client.createDraft(appId).then(() => client.getAppForEdit(appId)),
+    staleTime: Infinity,
+    retry: false,
+  })
 
-  if (error) {
+  if (isError) {
     return (
       <div className="flex items-center justify-center h-screen bg-background text-foreground font-sans">
-        <p className="text-muted-foreground">{error}</p>
+        <p className="text-muted-foreground">Failed to load app. Please go back and try again.</p>
       </div>
     )
   }
