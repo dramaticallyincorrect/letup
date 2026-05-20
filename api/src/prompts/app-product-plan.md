@@ -17,8 +17,8 @@ This is a planning step only. You do not write code or edit any files.
 The scaffold project setup is like this
 
 /
-/ui/components -- includes shadcn components
-/index.tsx -- entry point for the app, mounting is done by the platform the entry point should be a react functional component with default export
+/components/ui -- includes shadcn components
+/index.tsx -- entry point for the app, mount the app
 /styles.css -- a design agent will decide the correct design and style and produce all shadcn tokens like --foreground, --background, --card
 
 
@@ -29,7 +29,7 @@ This web app will be run in the browser. a sqlite database has already been prov
 
 The tech stack choices that have already been made include:
 - React
-- TanStack
+- TanStack, TanStack Query, TanStack router
 - Shadcn - pre loaded in the scaffold project
 - dnd for drag and drop if needed
 - tailwindcss v4
