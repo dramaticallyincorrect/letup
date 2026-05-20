@@ -1035,6 +1035,9 @@ function buildApp(fastify: Fastify) {
 
     try {
 
+      const planningModel = 'claude-opus-4-7'
+
+
       const sharedAgentParams = {
         ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
         signal: ac.signal,
@@ -1114,13 +1117,12 @@ function buildApp(fastify: Fastify) {
         appFs.listFilesTool,
       ]
 
-      const planningModel = 'deepseek-v4-pro'
 
 
       if (!isRefinement) {
         buildMessages = await runAgentLoop({
           effort: 'medium',
-          messages: [{ role: 'user', content: userMessage }],
+          messages: [{ role: 'user', content: 'create an implementation plan for this user request\n' + userMessage }],
           tools: [
             askUserTool,
             appFs.readFileTool,
@@ -1188,7 +1190,7 @@ function buildApp(fastify: Fastify) {
         return result
       }
 
-      allMessages = await runBuildWithRetry([...markLastTurnCacheable(buildMessages), { role: 'user', content: 'execute the implementation' }])
+      allMessages = await runBuildWithRetry([...markLastTurnCacheable(buildMessages), { role: 'user', content: 'execute the implementation plan' }])
 
       await saveProgress(allMessages)
 
