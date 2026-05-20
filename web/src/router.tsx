@@ -4,26 +4,36 @@ import {
   createRoute,
   Outlet,
 } from '@tanstack/react-router'
-import { HomePage } from './apps/home-page'
+import { lazy, Suspense } from 'react'
+
+// Eager — zero-wait paths every user hits on first load
 import { LandingPage } from './apps/landing-page'
-import { MarketplacePage } from './apps/marketplace-page'
-import { CreatePage } from './apps/create-page'
-import { EditPage } from './apps/edit-page'
-import { AppViewPage } from './apps/app-view'
-import { DashboardPage } from './apps/dashboard-page'
-import { UsagePage } from './apps/usage-page'
-import { SignupPage } from './apps/auth/signup-page'
+import { HomePage } from './apps/home-page'
 import { LoginPage } from './apps/auth/login-page'
-import { PaymentPage } from './apps/payment-page'
-import { AccountPage } from './apps/account-page'
-import { AdminPage } from './apps/admin-page'
-import { AdminSubmissionPage } from './apps/admin-submission-page'
-import { PrivacyPage } from './apps/privacy-page'
-import { TermsPage } from './apps/terms-page'
-import { RefundPage } from './apps/refund-page'
+import { SignupPage } from './apps/auth/signup-page'
+
+// Lazy — everything else is split into separate chunks
+const MarketplacePage = lazy(() => import('./apps/marketplace-page').then(m => ({ default: m.MarketplacePage })))
+const CreatePage = lazy(() => import('./apps/create-page').then(m => ({ default: m.CreatePage })))
+const EditPage = lazy(() => import('./apps/edit-page').then(m => ({ default: m.EditPage })))
+const AppViewPage = lazy(() => import('./apps/app-view').then(m => ({ default: m.AppViewPage })))
+const DashboardPage = lazy(() => import('./apps/dashboard-page').then(m => ({ default: m.DashboardPage })))
+const UsagePage = lazy(() => import('./apps/usage-page').then(m => ({ default: m.UsagePage })))
+const PaymentPage = lazy(() => import('./apps/payment-page').then(m => ({ default: m.PaymentPage })))
+const AccountPage = lazy(() => import('./apps/account-page').then(m => ({ default: m.AccountPage })))
+const AdminPage = lazy(() => import('./apps/admin-page').then(m => ({ default: m.AdminPage })))
+const AdminSubmissionPage = lazy(() => import('./apps/admin-submission-page').then(m => ({ default: m.AdminSubmissionPage })))
+const AdminAppsPage = lazy(() => import('./apps/admin-apps-page').then(m => ({ default: m.AdminAppsPage })))
+const PrivacyPage = lazy(() => import('./apps/privacy-page').then(m => ({ default: m.PrivacyPage })))
+const TermsPage = lazy(() => import('./apps/terms-page').then(m => ({ default: m.TermsPage })))
+const RefundPage = lazy(() => import('./apps/refund-page').then(m => ({ default: m.RefundPage })))
 
 const rootRoute = createRootRoute({
-  component: () => <Outlet />,
+  component: () => (
+    <Suspense fallback={null}>
+      <Outlet />
+    </Suspense>
+  ),
 })
 
 const landingRoute = createRoute({
@@ -113,6 +123,12 @@ const adminSubmissionRoute = createRoute({
   component: AdminSubmissionPage,
 })
 
+const adminAppsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/admin/apps',
+  component: AdminAppsPage,
+})
+
 const privacyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/privacy',
@@ -146,6 +162,7 @@ const routeTree = rootRoute.addChildren([
   accountRoute,
   adminRoute,
   adminSubmissionRoute,
+  adminAppsRoute,
   privacyRoute,
   termsRoute,
   refundRoute,

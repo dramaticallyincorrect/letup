@@ -235,6 +235,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   appManifest(fastify)
   renderApp(fastify)
   getAppUsage(fastify)
+  adminListApps(fastify)
 }
 
 function sseHeaders(origin?: string) {
@@ -1786,6 +1787,41 @@ function getAppUsage(fastify: Fastify) {
     }))
 
     return reply.send(result)
+  })
+}
+
+function adminListApps(fastify: Fastify) {
+  fastify.get('/admin/apps', {
+    schema: { tags: ['apps', 'admin'], summary: 'List all apps with source files (admin)' },
+  }, async (request, reply) => {
+    request.assertAdmin()
+
+    const rows = await fastify.db
+      .select({
+        id: apps.id,
+        name: apps.name,
+        description: apps.description,
+        creatorId: apps.creatorId,
+        latestVersionNumber: apps.latestVersionNumber,
+        createdAt: apps.createdAt,
+        updatedAt: apps.updatedAt,
+        versionNumber: appVersions.versionNumber,
+        isDraft: appVersions.isDraft,
+        sourceFiles: appVersions.sourceFiles,
+        compiledCode: appVersions.compiledCode,
+        cssCode: appVersions.cssCode,
+      })
+      .from(apps)
+      .leftJoin(
+        appVersions,
+        and(
+          eq(appVersions.appId, apps.id),
+          eq(appVersions.versionNumber, apps.latestVersionNumber),
+        ),
+      )
+      .orderBy(desc(apps.updatedAt))
+
+    return reply.send(rows)
   })
 }
 

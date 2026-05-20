@@ -399,6 +399,21 @@ export async function installMarketplaceListing(appId: string): Promise<void> {
   await apiFetch(`/marketplace/listings/${appId}/install`, { method: 'POST' })
 }
 
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export type AdminApp = AppSummary & {
+  versionNumber: number | null
+  isDraft: boolean | null
+  sourceFiles: Array<{ path: string; content: string }> | null
+  compiledCode: string | null
+  cssCode: string | null
+}
+
+export async function getAdminApps(): Promise<AdminApp[]> {
+  const res = await apiFetch('/admin/apps')
+  return res.json()
+}
+
 // ── SSE ───────────────────────────────────────────────────────────────────────
 
 export async function* parseSSE(reader: ReadableStreamDefaultReader<Uint8Array>) {
