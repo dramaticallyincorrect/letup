@@ -146,7 +146,7 @@ function ChatComposer({
       <div className="bg-card border border-border/70 rounded-3xl px-4 pt-3.5 pb-3 shadow-(--shadow-md) transition-all focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/20">
         <Textarea
           rows={1}
-          placeholder={hasMessages ? 'Ask Claude to change something…' : 'Describe your app — what would you like to build?'}
+          placeholder={hasMessages ? 'Ask to change something…' : 'Describe your app — what would you like to build?'}
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}
           onKeyDown={e => {
@@ -858,7 +858,7 @@ export function CreatePageInner({
                     Your app will appear here
                   </h3>
                   <p className="mt-2 text-[15px] text-muted-foreground max-w-80 leading-[1.55] mx-auto">
-                    Send a message — the preview updates as Claude builds.
+                    Send a message — the preview updates when the app is ready.
                   </p>
                 </div>
 
@@ -910,7 +910,7 @@ export function CreatePageInner({
                         Your app will appear here
                       </h3>
                       <p className="mt-2 text-[15px] text-muted-foreground max-w-80 leading-[1.55] mx-auto">
-                        Send a message — the preview updates as Claude builds.
+                        Send a message — the preview updates when the app is ready.
                       </p>
                     </div>
                   </div>

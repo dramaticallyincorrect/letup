@@ -70,7 +70,7 @@ export function widgetToAppCard(w: AppSummary): AppCard {
     name: w.name,
     glyph: getAppGlyph(w.name),
     tint: getAppTint(w.id),
-    description: w.description || 'A mini app built with Claude.',
+    description: w.description || 'A app built with Letup.',
     category: 'Productivity',
     latestVersionNumber: w.latestVersionNumber,
   }

@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { usePaddlePrices } from '@/lib/use-paddle-prices'
 
 const PRO_FEATURES = [
-  '100 Claude credits / month',
+  '100 credits / month',
   'Unlimited apps',
   'Publish to the marketplace',
   'Priority support',

@@ -161,7 +161,7 @@ function LibraryView({
             <PlusIcon className='rounded-xl items-center bg-foreground text-background' />
           </div>
           <h3 className="font-bold text-base tracking-[-0.01em] m-0">Create new app</h3>
-          <p className="text-[13.5px] text-muted-foreground m-0">Describe an idea. Claude builds the rest.</p>
+          <p className="text-[13.5px] text-muted-foreground m-0">Describe an idea. Letup builds the rest.</p>
         </Link>
 
         {apps.map(a => (
