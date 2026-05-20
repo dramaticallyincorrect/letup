@@ -233,6 +233,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   runtimeResult(fastify)
   queryAppDb(fastify)
   appManifest(fastify)
+  renderApp(fastify)
   getAppUsage(fastify)
 }
 
@@ -446,6 +447,182 @@ function getApp(fastify: Fastify) {
   })
 }
 
+// Escape a JSON string for embedding as a JS expression inside a <script> block.
+// Uses unicode escapes for < > & so the HTML parser can't mis-interpret them,
+// and escapes U+2028 / U+2029 which are line terminators in JS string literals.
+function escapeJsonForScript(s: string): string {
+  return s
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .split(' ').join('\\u2028')
+    .split(' ').join('\\u2029')
+}
+
+function escapeForStyle(s: string): string {
+  // Inside <style>, only the closing </style> tag is dangerous.
+  return s.replace(/<\/style/gi, '<\\/style')
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function renderAppShell(opts: {
+  appId: string
+  name: string | null
+  cssCode: string | null
+  draft: boolean
+}): string {
+  const title = escapeHtml(opts.name ?? 'App')
+  const css = escapeForStyle(opts.cssCode ?? '')
+  const context = escapeJsonForScript(JSON.stringify({ appId: opts.appId, draft: opts.draft }))
+  const bundleSrc = `/apps/${opts.appId}/bundle.js${opts.draft ? '?draft=true' : ''}`
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${title}</title>
+    <base href="/apps/${opts.appId}/render/">
+    <style>${css}</style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      window.__APP_CONTEXT__ = ${context};
+      window.addEventListener('error', function(e){
+        try { parent.postMessage({ type: 'app-error', message: e.message, stack: e.error && e.error.stack }, '*'); } catch(_) {}
+      });
+      window.addEventListener('unhandledrejection', function(e){
+        try { parent.postMessage({ type: 'app-error', message: String(e.reason && e.reason.message || e.reason) }, '*'); } catch(_) {}
+      });
+      // Intercept fetch responses to report HTTP errors from db/ai endpoints or
+      // external APIs, but suppress failures from other platform endpoints.
+      (function(){
+        var _fetch = window.fetch;
+        window.fetch = function(input) {
+          var url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+          return _fetch.apply(this, arguments).then(function(res) {
+            if (!res.ok) {
+              var isDbOrAi = /\\/apps\\/[^\\/]+\\/db\\/query|\\/ai\\/generate/.test(url);
+              var isExternal = url.indexOf('/') !== 0 && url.indexOf('http') === 0;
+              if (isDbOrAi || isExternal) {
+                try { parent.postMessage({ type: 'app-error', message: 'HTTP ' + res.status + ': ' + url }, '*'); } catch(_) {}
+              }
+            }
+            return res;
+          });
+        };
+      })();
+    </script>
+    <script type="module" src="${bundleSrc}"></script>
+  </body>
+</html>`
+}
+
+function renderApp(fastify: Fastify) {
+  type RenderParams = { Params: { appId: string }; Querystring: { draft?: string } }
+
+  // Serve the compiled JS bundle — separate from the HTML shell so the browser can
+  // cache it and so we never need to escape JS source inside an HTML document.
+  fastify.get<RenderParams>(
+    '/apps/:appId/bundle.js',
+    { schema: { tags: ['apps'], summary: 'Serve the compiled JS bundle for an app version' } },
+    async (request, reply) => {
+      const { appId } = request.params
+      const draft = request.query.draft === 'true'
+
+      const [appRow] = await fastify.db
+        .select({ latestVersionNumber: apps.latestVersionNumber })
+        .from(apps)
+        .where(eq(apps.id, appId))
+        .limit(1)
+      if (!appRow) return reply.code(404).type('text/plain').send('app not found')
+
+      let compiledCode: string | null = null
+      if (draft) {
+        const [row] = await fastify.db
+          .select({ compiledCode: appVersions.compiledCode })
+          .from(appVersions)
+          .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
+          .limit(1)
+        compiledCode = row?.compiledCode ?? null
+      } else {
+        const [row] = await fastify.db
+          .select({ compiledCode: appVersions.compiledCode })
+          .from(appVersions)
+          .where(and(eq(appVersions.appId, appId), eq(appVersions.versionNumber, appRow.latestVersionNumber)))
+          .limit(1)
+        compiledCode = row?.compiledCode ?? null
+      }
+
+      if (!compiledCode) return reply.code(404).type('text/plain').send('app not built yet')
+
+      return reply
+        .type('application/javascript; charset=utf-8')
+        .header('Cache-Control', 'no-store')
+        .send(compiledCode)
+    },
+  )
+
+  // HTML shell — thin document that injects context and loads the bundle via <script src>.
+  const shellHandler = async (
+    request: import('fastify').FastifyRequest<RenderParams>,
+    reply: import('fastify').FastifyReply,
+  ) => {
+    const { appId } = request.params
+    const draft = request.query.draft === 'true'
+
+    const [appRow] = await fastify.db
+      .select({ name: apps.name, latestVersionNumber: apps.latestVersionNumber })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1)
+    if (!appRow) return reply.code(404).type('text/plain').send('app not found')
+
+    let cssCode: string | null = null
+    if (draft) {
+      const [row] = await fastify.db
+        .select({ cssCode: appVersions.cssCode })
+        .from(appVersions)
+        .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
+        .limit(1)
+      cssCode = row?.cssCode ?? null
+    } else {
+      const [row] = await fastify.db
+        .select({ cssCode: appVersions.cssCode })
+        .from(appVersions)
+        .where(and(eq(appVersions.appId, appId), eq(appVersions.versionNumber, appRow.latestVersionNumber)))
+        .limit(1)
+      cssCode = row?.cssCode ?? null
+    }
+
+    const html = renderAppShell({ appId, name: appRow.name, cssCode, draft })
+
+    return reply
+      .type('text/html; charset=utf-8')
+      .header('Cache-Control', 'no-store')
+      .send(html)
+  }
+
+  fastify.get<RenderParams>(
+    '/apps/:appId/render',
+    { schema: { tags: ['apps'], summary: 'Render the app HTML shell for iframe embedding' } },
+    shellHandler,
+  )
+  // Splat route — apps using pushState (e.g. /apps/abc/render/settings) survive hard refresh.
+  fastify.get<{ Params: { appId: string; '*': string }; Querystring: { draft?: string } }>(
+    '/apps/:appId/render/*',
+    { schema: { tags: ['apps'], summary: 'Render the app HTML shell (any sub-path)' } },
+    shellHandler as never,
+  )
+}
+
 function getAppForEdit(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId/edit', {
     schema: { tags: ['apps'], summary: 'Get an app by ID including conversation history (prefers draft version)' },
@@ -653,7 +830,7 @@ function extractTailwindCandidates(files: Map<string, string>): string[] {
   return [...candidates]
 }
 
-async function compileTailwindCss(files: Map<string, string>): Promise<string> {
+export async function compileTailwindCss(files: Map<string, string>): Promise<string> {
   const userCss = files.get('styles.css') ?? ''
   const cssInput = `@import "tailwindcss";\n${userCss}`
   const compiler = await compile(cssInput, {
@@ -665,35 +842,141 @@ async function compileTailwindCss(files: Map<string, string>): Promise<string> {
 
 const esmShCache = new Map<string, string>()
 
-async function compileVirtualFiles(files: Map<string, string>): Promise<string> {
+// Apps are rendered in iframes, so each bundle ships its own React. Pin canonical
+// esm.sh URLs so app code and transitively-resolved esm.sh packages all dedupe to
+// the same React instance (avoids hook errors from a duplicated ReactCurrentDispatcher).
+//
+// The esm.sh "surface" URL (e.g. https://esm.sh/react@19) returns a thin wrapper
+// that does `export * from ".../X.Y.Z/es2022/react.mjs"` AND `export { default }
+// from ".../X.Y.Z/es2022/react.mjs"` — the duplicate `default` re-export trips
+// esbuild's cycle detection. We resolve those surface URLs to their underlying
+// versioned .mjs files once at startup so esbuild only ever bundles the leaf.
+const REACT_VERSION = '19'
+let REACT_URL = `https://esm.sh/react@${REACT_VERSION}`
+let REACT_JSX_RUNTIME_URL = `https://esm.sh/react@${REACT_VERSION}/jsx-runtime`
+let REACT_DOM_URL = `https://esm.sh/react-dom@${REACT_VERSION}`
+let REACT_DOM_CLIENT_URL = `https://esm.sh/react-dom@${REACT_VERSION}/client`
+
+let reactUrlsResolved = false
+async function resolveReactUrls(): Promise<void> {
+  if (reactUrlsResolved) return
+  // Follow each wrapper's `export * from "..."` to its real versioned .mjs URL.
+  async function follow(wrapperUrl: string): Promise<string> {
+    const res = await fetch(wrapperUrl)
+    if (!res.ok) throw new Error(`Failed to resolve ${wrapperUrl}: ${res.status}`)
+    const body = await res.text()
+    const m = body.match(/export\s+\*\s+from\s+["']([^"']+)["']/)
+    if (!m) return wrapperUrl // no wrapper, use as-is
+    return new URL(m[1], wrapperUrl).toString()
+  }
+  ;[REACT_URL, REACT_JSX_RUNTIME_URL, REACT_DOM_URL, REACT_DOM_CLIENT_URL] = await Promise.all([
+    follow(REACT_URL),
+    follow(REACT_JSX_RUNTIME_URL),
+    follow(REACT_DOM_URL),
+    follow(REACT_DOM_CLIENT_URL),
+  ])
+  reactUrlsResolved = true
+}
+
+// Virtual entry point — wraps the user's index.tsx with a React root mount.
+const ENTRY_SOURCE = `
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './index.tsx';
+
+const container = document.getElementById('root');
+if (container) {
+  createRoot(container).render(React.createElement(App, { data: {} }));
+}
+`
+
+// 'db' module → fetches /apps/:appId/db/query using __APP_CONTEXT__ injected into the HTML shell.
+const DB_SHIM = `
+export async function query(sql, params) {
+  const ctx = (typeof window !== 'undefined' && window.__APP_CONTEXT__) || {};
+  if (!ctx.appId) throw new Error('db: __APP_CONTEXT__.appId missing');
+  const url = '/apps/' + ctx.appId + '/db/query' + (ctx.draft ? '?draft=true' : '');
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql, params }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+`
+
+// Back-compat shim for apps written against the legacy `router` module
+// (hash-based routing). New apps should import a real router library instead.
+const ROUTER_SHIM = `
+import * as React from 'react';
+export function useRouter() {
+  const [path, setPath] = React.useState(function(){ return window.location.hash.slice(1) || '/'; });
+  React.useEffect(function(){
+    var handler = function(){ setPath(window.location.hash.slice(1) || '/'); };
+    window.addEventListener('hashchange', handler);
+    return function(){ window.removeEventListener('hashchange', handler); };
+  }, []);
+  var navigate = React.useCallback(function(to){ window.location.hash = to; }, []);
+  return { path: path, navigate: navigate };
+}
+export function Link(props) {
+  var to = props.to, children = props.children, rest = {};
+  for (var k in props) if (k !== 'to' && k !== 'children') rest[k] = props[k];
+  rest.href = '#' + to;
+  return React.createElement('a', rest, children);
+}
+`
+
+// 'ai' module → fetches /ai/generate (requires authenticated session).
+const AI_SHIM = `
+export async function generateText({ prompt, system, model }) {
+  const res = await fetch('/ai/generate', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, system, model }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()).text;
+}
+`
+
+export async function compileVirtualFiles(files: Map<string, string>): Promise<string> {
+  await resolveReactUrls()
   const result = await build({
-    entryPoints: ['index.tsx'],
+    entryPoints: ['__entry__.tsx'],
     bundle: true,
-    format: 'cjs',
+    format: 'esm',
     write: false,
     jsx: 'automatic',
     target: 'es2020',
-    external: [
-      'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', 'framer-motion',
-      'radix-ui', 'lucide-react',
-      'class-variance-authority', 'tailwind-merge',
-      'ai', 'db',
-    ],
     plugins: [
       {
         name: 'virtual-fs',
         setup(b) {
-          // All modules provided by the req shim at runtime must be marked external
-          // before the esm-sh plugin intercepts them. If esbuild bundles any of these
-          // from esm.sh it wraps them in __commonJS, bypassing the req shim entirely.
-          // React bundled from esm.sh has a different ReactCurrentDispatcher than the
-          // host React, causing hook calls to fail with "Cannot read properties of null".
-          b.onResolve({ filter: /^(react|react\/jsx-runtime|react-dom|framer-motion|radix-ui|lucide-react|class-variance-authority|tailwind-merge|db|ai|router)$/ }, () => ({ external: true }))
+          // Virtual entry point — bootstraps the user's index.tsx into a React root.
+          b.onResolve({ filter: /^__entry__\.tsx$/ }, () => ({ path: '__entry__.tsx', namespace: 'virtual' }))
+
+          // 'db', 'ai', 'router' → resolve to inline shim ESM source (HTTP calls to our API).
+          b.onResolve({ filter: /^(db|ai|router)$/ }, args => ({ path: args.path, namespace: 'app-shim' }))
+          b.onLoad({ filter: /^(db|ai|router)$/, namespace: 'app-shim' }, args => ({
+            contents: args.path === 'db' ? DB_SHIM : args.path === 'ai' ? AI_SHIM : ROUTER_SHIM,
+            loader: 'js' as const,
+          }))
+
+          // React / React-DOM → canonical esm.sh URLs so transitive imports dedupe.
+          b.onResolve({ filter: /^react$/ }, () => ({ path: REACT_URL, namespace: 'esm-sh' }))
+          b.onResolve({ filter: /^react\/jsx-runtime$/ }, () => ({ path: REACT_JSX_RUNTIME_URL, namespace: 'esm-sh' }))
+          b.onResolve({ filter: /^react-dom$/ }, () => ({ path: REACT_DOM_URL, namespace: 'esm-sh' }))
+          b.onResolve({ filter: /^react-dom\/client$/ }, () => ({ path: REACT_DOM_CLIENT_URL, namespace: 'esm-sh' }))
+
           b.onResolve({ filter: /^@\// }, args => {
             const relativePath = args.path.slice(2) // '@/lib/utils' → 'lib/utils'
             const resolved = resolveVirtualPath('', relativePath, files)
             if (resolved) return { path: resolved, namespace: 'virtual' }
-            return { external: true }
+            return null
           })
           b.onResolve({ filter: /.*/ }, args => {
             if (args.namespace === 'virtual' && args.path.startsWith('.')) {
@@ -705,6 +988,7 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
             return null
           })
           b.onLoad({ filter: /.*/, namespace: 'virtual' }, args => {
+            if (args.path === '__entry__.tsx') return { contents: ENTRY_SOURCE, loader: 'tsx' as const }
             // CSS is extracted separately (virtualFiles → cssCode); return empty JS so
             // `import './styles.css'` compiles cleanly without bundling CSS into the JS output.
             if (args.path.endsWith('.css')) return { contents: '', loader: 'js' as const }
@@ -722,26 +1006,33 @@ async function compileVirtualFiles(files: Map<string, string>): Promise<string> 
           // Exclude paths that look like local source files (.ts, .tsx, .css) — these are
           // virtual files that aren't written yet (e.g. during progressive compilation) and
           // should never be fetched from esm.sh.
+          //
+          // @radix-ui/* packages are fetched in ?bundle mode so esm.sh collapses their
+          // internal import graph into a single self-contained file. Without this, esbuild
+          // has to follow dozens of relative intra-package imports, many of which fail.
+          // React/react-dom are peer deps of radix-ui so esm.sh still externalises them
+          // (emits `import ... from "https://esm.sh/react@..."`) and our React-normalisation
+          // resolver below catches and dedupes those imports as usual.
+          //
+          // Same treatment for lucide-react which ships hundreds of individual icon chunks.
+          const BUNDLED_PACKAGES = /^@radix-ui\/|^lucide-react(\/|$)/
           b.onResolve({ filter: /^[^./]/ }, args => {
             if (/\.(tsx?|css|json)$/.test(args.path)) return null
-            return { path: `https://esm.sh/${args.path}`, namespace: 'esm-sh' }
+            const base = `https://esm.sh/${args.path}`
+            if (BUNDLED_PACKAGES.test(args.path)) return { path: `${base}?bundle`, namespace: 'esm-sh' }
+            return { path: base, namespace: 'esm-sh' }
           })
-          // Resolve relative imports within esm.sh modules.
-          // Redirect React imports to the external host React so esm.sh packages
-          // don't bundle a second React instance with a different dispatcher.
+          // Normalize React / React-DOM transitive imports within esm.sh-resolved code
+          // to the canonical pinned URLs so we never bundle two copies.
           b.onResolve({ filter: /.*/, namespace: 'esm-sh' }, args => {
             const resolved = new URL(args.path, args.importer).toString()
-            if (/esm\.sh\/(react)(@|\?|\/|$)/.test(resolved)) {
-              if (/jsx-runtime|jsx-dev-runtime/.test(resolved)) {
-                return { path: 'react/jsx-runtime', external: true }
-              }
-              return { path: 'react', external: true }
+            if (/esm\.sh\/(v\d+\/)?(@\d+\/)?react(@|\?|\/|$)/.test(resolved) && !/react-dom/.test(resolved)) {
+              if (/jsx-runtime|jsx-dev-runtime/.test(resolved)) return { path: REACT_JSX_RUNTIME_URL, namespace: 'esm-sh' }
+              return { path: REACT_URL, namespace: 'esm-sh' }
             }
-            if (/esm\.sh\/(react-dom)(@|\?|\/|$)/.test(resolved)) {
-              if (/\/client/.test(resolved)) {
-                return { path: 'react-dom/client', external: true }
-              }
-              return { path: 'react-dom', external: true }
+            if (/esm\.sh\/(v\d+\/)?(@\d+\/)?react-dom(@|\?|\/|$)/.test(resolved)) {
+              if (/\/client/.test(resolved)) return { path: REACT_DOM_CLIENT_URL, namespace: 'esm-sh' }
+              return { path: REACT_DOM_URL, namespace: 'esm-sh' }
             }
             return { path: resolved, namespace: 'esm-sh' }
           })
@@ -1035,7 +1326,7 @@ function buildApp(fastify: Fastify) {
 
     try {
 
-      const planningModel = 'claude-opus-4-7'
+      const planningModel = 'deepseek-v4-flash'
 
 
       const sharedAgentParams = {

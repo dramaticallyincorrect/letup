@@ -241,7 +241,10 @@ export function CreatePageInner({
   const [appName, setAppName] = useState(initialAppName)
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [compiledCode, setCompiledCode] = useState<string | null>(initialCompiledCode)
-  const [cssCode, setCssCode] = useState<string | null>(initialCssCode)
+  // cssCode is no longer rendered client-side (the iframe pulls its own CSS from
+  // /apps/:appId/render). We still accept the initial value to avoid breaking the
+  // CreatePageInnerProps contract, but it's intentionally unused.
+  void initialCssCode
   const [isSending, setIsSending] = useState(false)
   const [currentActivity, setCurrentActivity] = useState<string | null>(null)
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
@@ -350,7 +353,6 @@ export function CreatePageInner({
         } else if (event === 'widget') {
           const w = data as client.App
           setCompiledCode(w.compiledCode)
-          setCssCode(w.cssCode)
           if (w.name && w.name !== 'Untitled app' && w.name !== 'Untitled Widget') {
             setAppName(w.name)
           }
@@ -414,12 +416,12 @@ export function CreatePageInner({
           // the widget's first render, which fires before runtime_check arrives).
           const prior: RuntimeErrorReport[] = verifyCollectorRef.current?.errors ?? []
           verifyCollectorRef.current = { checkId, errors: prior }
-          
+
           verifyTimerRef.current = setTimeout(async () => {
             const c = verifyCollectorRef.current
             verifyCollectorRef.current = null
             verifyTimerRef.current = null
-            
+
             if (!c) return
             try {
               if (c.errors.length === 0) {
@@ -509,7 +511,7 @@ export function CreatePageInner({
       clearTimeout(verifyTimerRef.current)
       verifyTimerRef.current = null
     }
-    
+
   }
 
   function handleStop() {
@@ -519,7 +521,7 @@ export function CreatePageInner({
       verifyTimerRef.current = null
     }
     verifyCollectorRef.current = null
-    
+
   }
 
   function handleRuntimeError(err: RuntimeErrorReport) {
@@ -866,7 +868,7 @@ export function CreatePageInner({
             </div>
           ) : (
             <div className="flex-1 overflow-auto relative">
-              <div className="w-full">
+              <div className="w-full h-full">
                 <ErrorBoundary
                   resetKeys={[compiledCode]}
                   onError={(err) => handleRuntimeError({
@@ -877,10 +879,10 @@ export function CreatePageInner({
                   fallback={hasShownVersion ? <div className="text-red p-4">Something went wrong</div> : <></>}
                 >
                   <AppPreview
-                    compiledCode={compiledCode}
-                    cssCode={cssCode}
-                    appId={widgetId ?? undefined}
+                    appId={widgetId}
                     draft={true}
+                    // Reload the iframe whenever a fresh build lands (compiledCode changes).
+                    reloadKey={compiledCode ?? undefined}
                     onRuntimeError={handleRuntimeError}
                     hideErrorPanel={!hasShownVersion}
                   />

@@ -15,8 +15,7 @@ The app should be built using these components, any components made by you shoul
 3. no sub routing for sections in the same page that the user might use the back and forward button to toggle between or might want to bookmark
 4. unstyled shadcn select and dropdown
 5. components content clipped on the edge
-6. no using the provided router library for routing
-7. managing spacing for labels and inputs in shadcn dialog instead of using <FieldGroup>, <Label> and letting shadcn handle it
+6. managing spacing for labels and inputs in shadcn dialog instead of using <FieldGroup>, <Label> and letting shadcn handle it
 
 ## File editing tools
 
@@ -25,9 +24,9 @@ The app should be built using these components, any components made by you shoul
 
 ## Critical Code rules
 
-- `index.tsx` must default-export a React functional component. **Never** call `createRoot`, `ReactDOM.render`, or any mounting function — the preview host mounts your component automatically.
-- **Never import `react-dom` or `react-dom/client`** — the host provides React and mounts your component; using `react-dom` directly causes a version conflict crash.
-- The `ai`, `db`, and `router` modules are available — import from them like any other package.
+- `index.tsx` must default-export a React functional component. **Never** call `createRoot`, `ReactDOM.render`, or any mounting function — a bootstrap wrapper mounts your default export automatically.
+- **Never import `react-dom` or `react-dom/client`** — the bootstrap wrapper handles mounting; doing it yourself produces duplicate roots.
+- The `ai` and `db` modules are available — import from them like any other package.
 - lucide icons are available, example `import { SendHorizonal } from 'lucide-react'`
 - You may also import **any browser-compatible npm package** — just write the import and it will be fetched and bundled automatically no npm install required.
 - Only use packages designed to run in the browser. Never import Node.js built-ins: `fs`, `path`, `crypto`, `http`, `child_process`, `os`, etc.
@@ -65,33 +64,32 @@ await query('INSERT INTO items (text) VALUES (?)', ['Buy milk'])
 
 ## Client-side routing
 
-Handle routing either for multiple pages or sections within the same page ie tabs , etc, import from the `router` module:
+Your app runs inside its own iframe with a full, isolated browsing context (its own `window`, `window.history`, `document`, and origin). You can use **any** routing library you like — `react-router-dom`, `@tanstack/react-router`, `wouter`, etc. Just import it; it will be fetched and bundled automatically.
+
+Example with React Router:
 
 ```tsx
-import { useRouter, Link } from 'router'
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 
-export default function App({ data }: { data: Record<string, unknown> }) {
-  const { path, navigate } = useRouter()
-
+export default function App() {
   return (
-    <div className="widget-root">
-      {path === '/' && <HomePage />}
-      {path === '/settings' && <SettingsPage navigate={navigate} />}
-
+    <BrowserRouter>
       <nav>
         <Link to="/">Home</Link>
         <Link to="/settings">Settings</Link>
       </nav>
-    </div>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 ```
 
-- `useRouter()` returns `{ path: string, navigate: (to: string) => void }`
-- `path` starts as `'/'` and updates on navigation
-- `navigate('/settings')` changes the route programmatically
-- `<Link to="/page">` renders an anchor that drives the router
-- Routes use URL hash — they don't conflict with the outer app
+- Any URL the app navigates to (`pushState`, `replaceState`, link clicks) stays inside the iframe — it never affects the parent host app.
+- A hard refresh on any sub-path (e.g. `/apps/<id>/render/settings`) re-serves the same app, so client-side routes survive reloads.
+- Use clean paths — there is no need for hash routing.
 
 ## AI capabilities — call ai from within the app
 

@@ -12,12 +12,15 @@ a marketplace for user created app
 5. ~~rename marketplace to app store~~
 6. ~~terms of services~~
 7. ~~privacy policy~~
-8. empty view for my apps
-9. ~~edit not opening on first try~~
-10. ~~share console logs with ai~~
+8. collapse conversation, only show the model text output
+9. add to library activates when auto fix is running
+10. play a small sound when build is done
+11. empty view for my apps
+12. ~~edit not opening on first try~~
+13. ~~share console logs with ai~~
    1. ~~in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai~~
-11. analytics
-12. builder
+14. analytics
+15. builder
     1.  include border and shadow in default styles.css
     2.  give build tool
     3.  try Todo tool
@@ -26,10 +29,10 @@ a marketplace for user created app
     6.  back to ask questions to clarify
     7.  try one with plan + thinking and one without
     8.  research context optimizations
-13. landing page
+16. landing page
    1. header when already signed in
    2. add screen shot of my apps
-14. go through the core workflows and review the code
+17. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place

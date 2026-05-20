@@ -1,5 +1,9 @@
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
+export function appRenderUrl(appId: string, draft = false): string {
+  return `${baseUrl}/apps/${appId}/render${draft ? '?draft=true' : ''}`
+}
+
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${baseUrl}${path}`, {
     headers: { ...init?.headers },
