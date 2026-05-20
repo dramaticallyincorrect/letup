@@ -23,6 +23,9 @@ const BUILD_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-build.m
 // Deferred promises waiting for user answers, keyed by question ID
 const pendingQuestions = new Map<string, (answer: string) => void>()
 
+// Deferred promises waiting for frontend runtime verification results, keyed by check ID
+const pendingRuntimeChecks = new Map<string, (result: { ok: boolean; error?: string }) => void>()
+
 // Rewrite registry-internal import paths to the virtual filesystem paths used at runtime.
 // The registry ships raw source where inter-component imports use @/registry/new-york-v4/…
 // but the shadcn CLI normally rewrites these on install. We do the same here.
@@ -227,6 +230,7 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   deleteDraftApp(fastify)
   buildApp(fastify)
   answerAppQuestion(fastify)
+  runtimeResult(fastify)
   queryAppDb(fastify)
   appManifest(fastify)
   getAppUsage(fastify)
@@ -1110,6 +1114,8 @@ function buildApp(fastify: Fastify) {
         appFs.listFilesTool,
       ]
 
+      const planningModel = 'deepseek-v4-pro'
+
 
       if (!isRefinement) {
         buildMessages = await runAgentLoop({
@@ -1125,7 +1131,7 @@ function buildApp(fastify: Fastify) {
           ],
           system: PRODUCT_PLAN_SYSTEM,
           ...sharedAgentParams,
-          model: 'claude-opus-4-7',
+          model: planningModel,
         })
 
 
@@ -1145,7 +1151,7 @@ function buildApp(fastify: Fastify) {
           ],
           system: PLAN_SYSTEM,
           ...sharedAgentParams,
-          model: 'claude-opus-4-7',
+          model: planningModel,
         })
 
         await saveProgress(buildMessages)
@@ -1189,12 +1195,56 @@ function buildApp(fastify: Fastify) {
       if (appFs.files.size > 0) {
         const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
         sendEvent('widget', updated)
+
+        // Runtime verification: ask the frontend to mount the widget and report
+        // back any render/runtime errors. If errors come back, run another agent
+        // turn with the error as context, up to MAX_RUNTIME_RETRIES times.
+        const MAX_RUNTIME_RETRIES = 2
+        const RUNTIME_CHECK_TIMEOUT_MS = 15000
+        for (let attempt = 0; attempt <= MAX_RUNTIME_RETRIES; attempt++) {
+          const checkId = randomUUID()
+          const result = await new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              pendingRuntimeChecks.delete(checkId)
+              resolve({ ok: true })
+            }, RUNTIME_CHECK_TIMEOUT_MS)
+            pendingRuntimeChecks.set(checkId, (r) => {
+              clearTimeout(timer)
+              resolve(r)
+            })
+            const onAbort = () => {
+              clearTimeout(timer)
+              pendingRuntimeChecks.delete(checkId)
+              reject(ac.signal.reason ?? new DOMException('Aborted', 'AbortError'))
+            }
+            if (ac.signal.aborted) return onAbort()
+            ac.signal.addEventListener('abort', onAbort, { once: true })
+            sendEvent('runtime_check', { checkId, attempt, maxAttempts: MAX_RUNTIME_RETRIES })
+          })
+
+          if (result.ok || !result.error) break
+          if (attempt === MAX_RUNTIME_RETRIES) {
+            sendEvent('error', { message: `Runtime error in preview: ${result.error}` })
+            break
+          }
+
+          const retryMsgs = freshCacheable(allMessages)
+          retryMsgs.push({ role: 'user', content: `Runtime error in preview:\n\n${result.error}\n\nPlease fix the issue.` })
+          fastify.log.info({ appId, attempt: attempt + 1 }, 'runtime error reported, retrying agent loop')
+          allMessages = await runBuildWithRetry(retryMsgs)
+          await saveProgress(allMessages)
+          const refreshed = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
+          sendEvent('widget', refreshed)
+        }
       }
     } catch (err) {
       compileAndPersist().catch(e => fastify.log.warn(e, 'failed to save progress after error'))
       const isAbort = ac.signal.aborted || (err instanceof Error && err.name === 'AbortError')
       if (isAbort) {
         for (const qid of sessionQuestionIds) pendingQuestions.delete(qid)
+        // No session-scoped tracking for runtime checks — they live only for the
+        // duration of a single Promise resolved by /apps/build/runtime-result or
+        // by the AbortSignal listener we register inline.
         try { await saveProgress(buildMessages) } catch (e) { fastify.log.warn(e, 'failed to save progress on cancel') }
         if (!reply.raw.writableEnded) sendEvent('cancelled', {})
         fastify.log.info({ appId, buildSessionId }, 'app build cancelled by client')
@@ -1300,6 +1350,31 @@ function answerAppQuestion(fastify: Fastify) {
     if (!resolve) return reply.code(404).send({ error: 'Question not found or already answered' })
     pendingQuestions.delete(questionId)
     resolve(answer)
+    return reply.send({ ok: true })
+  })
+}
+
+function runtimeResult(fastify: Fastify) {
+  fastify.post<{ Body: { checkId: string; ok: boolean; error?: string } }>('/apps/build/runtime-result', {
+    schema: {
+      tags: ['apps'],
+      summary: 'Report preview runtime verification result back to a waiting build session',
+      body: {
+        type: 'object',
+        properties: {
+          checkId: { type: 'string' },
+          ok: { type: 'boolean' },
+          error: { type: 'string' },
+        },
+        required: ['checkId', 'ok'],
+      },
+    },
+  }, async (request, reply) => {
+    const { checkId, ok, error } = request.body
+    const resolve = pendingRuntimeChecks.get(checkId)
+    if (!resolve) return reply.code(404).send({ error: 'check not found or already resolved' })
+    pendingRuntimeChecks.delete(checkId)
+    resolve({ ok, error })
     return reply.send({ ok: true })
   })
 }

@@ -14,8 +14,8 @@ a marketplace for user created app
 7. ~~privacy policy~~
 8. empty view for my apps
 9. ~~edit not opening on first try~~
-10. share console logs with ai
-   1. in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai
+10. ~~share console logs with ai~~
+   1. ~~in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai~~
 11. analytics
 12. builder
     1.  include border and shadow in default styles.css

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { ErrorBoundary } from 'react-error-boundary'
 import * as ReactDOM from 'react-dom'
 import * as ReactDOMClient from 'react-dom/client'
 import * as ReactJSXRuntime from 'react/jsx-runtime'
@@ -65,19 +66,34 @@ const shadcnRegistry: Record<string, Record<string, unknown>> = {
   'ai': { generateText },
 }
 
+export type RuntimeErrorReport = {
+  message: string
+  stack?: string
+  source: 'compile' | 'render' | 'window' | 'rejection' | 'console'
+}
+
 export function AppPreview({
   compiledCode,
   cssCode,
   appId,
   draft = false,
+  onRuntimeError,
+  hideErrorPanel = false,
 }: {
   compiledCode: string | null
   cssCode?: string | null
   appId?: string
   draft?: boolean
+  onRuntimeError?: (err: RuntimeErrorReport) => void
+  hideErrorPanel?: boolean
 }) {
   const [Component, setComponent] = useState<React.ComponentType<{ data: Record<string, unknown> }> | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const onRuntimeErrorRef = useRef(onRuntimeError)
+  useEffect(() => { onRuntimeErrorRef.current = onRuntimeError }, [onRuntimeError])
+  const report = (err: RuntimeErrorReport) => {
+    onRuntimeErrorRef.current?.(err)
+  }
 
   // Inject fallback CSS so Radix UI portal elements (Dialog, Select, Popover, etc.)
   // are always correctly positioned regardless of what the widget's compiled CSS covers.
@@ -180,13 +196,84 @@ export function AppPreview({
         setComponent(() => Comp as React.ComponentType<{ data: Record<string, unknown> }>)
         setError(null)
       } else {
-        setError('Widget has no default export')
+        const message = 'Widget has no default export'
+        setError(message)
+        report({ message, source: 'compile' })
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to render widget')
+      const message = err instanceof Error ? err.message : 'Failed to render widget'
+      setError(message)
       setComponent(null)
+      report({ message, stack: err instanceof Error ? err.stack : undefined, source: 'compile' })
     }
   }, [compiledCode, appId, draft])
+
+  // Global runtime error capture while the widget is mounted: window errors,
+  // unhandled promise rejections, and console.error calls.
+  useEffect(() => {
+    if (!compiledCode) return
+    const onError = (e: ErrorEvent) => {
+      report({
+        message: e.message || String(e.error),
+        stack: e.error?.stack,
+        source: 'window',
+      })
+    }
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const reason = e.reason
+      report({
+        message: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+        source: 'rejection',
+      })
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+
+    // Patch fetch to capture HTTP errors from db/ai modules and external APIs.
+    // Internal infrastructure calls (auth, billing, build, etc.) are excluded.
+    const apiBase = (import.meta.env.VITE_API_URL ?? '') as string
+    const originalFetch = window.fetch
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const res = await originalFetch(...args)
+      if (!res.ok) {
+        const rawUrl = typeof args[0] === 'string' ? args[0] : args[0] instanceof Request ? args[0].url : String(args[0])
+        const isOwnApi = rawUrl.startsWith('/') || (apiBase !== '' && rawUrl.startsWith(apiBase))
+        const isDbOrAi = /\/apps\/[^/]+\/db\/query|\/ai\/generate/.test(rawUrl)
+        const isExternal = !isOwnApi
+        if (isDbOrAi || isExternal) {
+          report({
+            message: `HTTP ${res.status}: ${rawUrl}`,
+            source: 'window',
+          })
+        }
+      }
+      return res
+    }
+
+    const originalConsoleError = console.error
+    console.error = (...args: unknown[]) => {
+      try {
+        const first = args[0]
+        const message = first instanceof Error
+          ? first.message
+          : args.map(a => (typeof a === 'string' ? a : (() => { try { return JSON.stringify(a) } catch { return String(a) } })())).join(' ')
+        report({
+          message,
+          stack: first instanceof Error ? first.stack : undefined,
+          source: 'console',
+        })
+      } catch { /* never let reporting break console */ }
+      originalConsoleError.apply(console, args)
+    }
+
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onRejection)
+      console.error = originalConsoleError
+      window.fetch = originalFetch
+    }
+  }, [compiledCode])
 
   if (!compiledCode) {
     return (
@@ -197,6 +284,7 @@ export function AppPreview({
   }
 
   if (error) {
+    if (hideErrorPanel) return null
     return (
       <div className="p-4 text-sm text-destructive bg-destructive/10 rounded-md">
         <p className="font-medium">Render error</p>
@@ -209,7 +297,22 @@ export function AppPreview({
 
   return (
     <div className={WIDGET_SCOPE}>
-      <Component data={{}} />
+      <ErrorBoundary
+        resetKeys={[compiledCode]}
+        onError={(err) => report({
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          source: 'render',
+        })}
+        fallback={hideErrorPanel ? <></> : (
+          <div className="p-4 text-sm text-destructive bg-destructive/10 rounded-md">
+            <p className="font-medium">Render error</p>
+            <p className="mt-1 font-mono text-xs">Widget threw while rendering.</p>
+          </div>
+        )}
+      >
+        <Component data={{}} />
+      </ErrorBoundary>
     </div>
   )
 }

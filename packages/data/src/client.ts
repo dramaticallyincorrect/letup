@@ -146,6 +146,17 @@ export async function answerAppQuestion(questionId: string, answer: string): Pro
   })
 }
 
+export async function reportRuntimeResult(
+  checkId: string,
+  result: { ok: true } | { ok: false; error: string },
+): Promise<void> {
+  await apiFetch('/apps/build/runtime-result', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ checkId, ...result }),
+  })
+}
+
 export type AppBuildUsage = {
   buildSessionId: string
   userMessage: string | null

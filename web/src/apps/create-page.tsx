@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Alert } from '@/components/ui/alert'
 import { AppIcon, TINT_STYLES } from './components/app-icon'
-import { AppPreview } from './app-preview'
+import { AppPreview, type RuntimeErrorReport } from './app-preview'
 import { getAppGlyph, getAppTint } from './data'
 import {
   ArrowUp,
@@ -18,6 +18,7 @@ import {
   Square,
   Sparkles,
   Check,
+  X,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -248,6 +249,10 @@ export function CreatePageInner({
   const [lowCreditsBalance, setLowCreditsBalance] = useState<number | null>(null)
   const [selectedModel, setSelectedModel] = useState<ModelID>(DEFAULT_MODEL)
   const [inputValue, setInputValue] = useState('')
+  const [hasShownVersion, setHasShownVersion] = useState<boolean>(initialCompiledCode != null)
+  const [capturedError, setCapturedError] = useState<{ message: string; stack?: string } | null>(null)
+  const verifyCollectorRef = useRef<{ checkId: string; errors: RuntimeErrorReport[] } | null>(null)
+  const verifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data: billing } = useQuery({
     queryKey: ['billing-status'],
@@ -296,6 +301,11 @@ export function CreatePageInner({
       { role: 'user', content: msg },
       { role: 'assistant', content: '', streaming: true },
     ])
+
+    // Pre-arm the runtime-error collector for this build so that errors thrown
+    // during the first render of a new compiled widget are captured even if
+    // they fire before the server's `runtime_check` event arrives.
+    verifyCollectorRef.current = { checkId: '', errors: [] }
 
     const ac = new AbortController()
     abortRef.current = ac
@@ -397,6 +407,36 @@ export function CreatePageInner({
               : m
             )
           )
+        } else if (event === 'runtime_check') {
+          const { checkId } = data as { checkId: string; attempt: number; maxAttempts: number }
+          if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current)
+          // Carry over any errors already captured during this build (e.g. from
+          // the widget's first render, which fires before runtime_check arrives).
+          const prior: RuntimeErrorReport[] = verifyCollectorRef.current?.errors ?? []
+          verifyCollectorRef.current = { checkId, errors: prior }
+          
+          verifyTimerRef.current = setTimeout(async () => {
+            const c = verifyCollectorRef.current
+            verifyCollectorRef.current = null
+            verifyTimerRef.current = null
+            
+            if (!c) return
+            try {
+              if (c.errors.length === 0) {
+                await client.reportRuntimeResult(c.checkId, { ok: true })
+                setHasShownVersion(true)
+              } else {
+                const seen = new Set<string>()
+                const deduped = c.errors.filter(e => seen.has(e.message) ? false : (seen.add(e.message), true))
+                const errText = deduped
+                  .map(e => `[${e.source}] ${e.message}${e.stack ? `\n${e.stack}` : ''}`)
+                  .join('\n\n')
+                await client.reportRuntimeResult(c.checkId, { ok: false, error: errText })
+              }
+            } catch (e) {
+              console.error('Failed to report runtime result', e)
+            }
+          }, 700)
         } else if (event === 'low_credits') {
           const { credits } = data as { credits: number }
           setLowCreditsBalance(credits)
@@ -462,10 +502,46 @@ export function CreatePageInner({
     abortRef.current = null
     setCurrentActivity(null)
     setIsSending(false)
+    // Any errors after this point belong to the post-build interaction window
+    // and should surface via the share-banner, not auto-fix.
+    verifyCollectorRef.current = null
+    if (verifyTimerRef.current) {
+      clearTimeout(verifyTimerRef.current)
+      verifyTimerRef.current = null
+    }
+    
   }
 
   function handleStop() {
     abortRef.current?.abort()
+    if (verifyTimerRef.current) {
+      clearTimeout(verifyTimerRef.current)
+      verifyTimerRef.current = null
+    }
+    verifyCollectorRef.current = null
+    
+  }
+
+  function handleRuntimeError(err: RuntimeErrorReport) {
+    const collector = verifyCollectorRef.current
+    if (collector) {
+      collector.errors.push(err)
+      return
+    }
+    // No active verification — only show the share-banner once the user has
+    // already seen a working version. Pre-first-version errors before the
+    // verification window opens are ignored (they'll be caught by the window
+    // once it opens, since the same renders will replay).
+    if (hasShownVersion) {
+      setCapturedError({ message: err.message, stack: err.stack })
+    }
+  }
+
+  async function handleShareError() {
+    if (!capturedError) return
+    const text = `The preview is showing a runtime error:\n\n${capturedError.message}${capturedError.stack ? `\n\n${capturedError.stack}` : ''}\n\nPlease fix it.`
+    setCapturedError(null)
+    await handleSend(text)
   }
 
   async function handleAnswerQuestion(questionId: string, directAnswer?: string) {
@@ -789,12 +865,96 @@ export function CreatePageInner({
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto relative">
               <div className="w-full">
-                <ErrorBoundary fallback={<div className="text-red">Something went wrong</div>}>
-                  <AppPreview compiledCode={compiledCode} cssCode={cssCode} appId={widgetId ?? undefined} draft={true} />
+                <ErrorBoundary
+                  resetKeys={[compiledCode]}
+                  onError={(err) => handleRuntimeError({
+                    message: err instanceof Error ? err.message : String(err),
+                    stack: err instanceof Error ? err.stack : undefined,
+                    source: 'render',
+                  })}
+                  fallback={hasShownVersion ? <div className="text-red p-4">Something went wrong</div> : <></>}
+                >
+                  <AppPreview
+                    compiledCode={compiledCode}
+                    cssCode={cssCode}
+                    appId={widgetId ?? undefined}
+                    draft={true}
+                    onRuntimeError={handleRuntimeError}
+                    hideErrorPanel={!hasShownVersion}
+                  />
                 </ErrorBoundary>
               </div>
+
+              {/* Cover the preview with the "your app will appear here" placeholder
+                  while the first version is being verified, so the user never sees
+                  the broken state. The widget still mounts under the overlay so
+                  React render errors actually fire and get reported. */}
+              {!hasShownVersion && (
+                <div className="absolute inset-0 flex items-center justify-center p-8 overflow-auto" style={{ background: 'var(--warm)' }}>
+                  <div
+                    className="absolute size-112 rounded-full blur-3xl opacity-50 animate-gradient-drift pointer-events-none"
+                    style={{ background: 'var(--tint-coral-bg)', top: '10%', left: '15%' }}
+                  />
+                  <div
+                    className="absolute size-96 rounded-full blur-3xl opacity-50 animate-gradient-drift-2 pointer-events-none"
+                    style={{ background: 'var(--tint-amber-bg)', bottom: '8%', right: '12%' }}
+                  />
+                  <div className="relative flex flex-col items-center gap-7 max-w-md w-full animate-soft-pop">
+                    <div className="animate-float">
+                      <MorphingAppIcon size="xl" />
+                    </div>
+                    <div className="text-center">
+                      <h3 className="text-2xl font-bold text-foreground tracking-tight">
+                        Your app will appear here
+                      </h3>
+                      <p className="mt-2 text-[15px] text-muted-foreground max-w-80 leading-[1.55] mx-auto">
+                        Send a message — the preview updates as Claude builds.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {capturedError && (
+                <div className="absolute top-3 right-3 z-10 max-w-sm animate-soft-pop">
+                  <Alert variant="destructive" className="flex items-start gap-2 py-2.5 px-3 shadow-lg bg-card [&>svg]:translate-y-0.5">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-destructive">Error captured in the preview</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate" title={capturedError.message}>
+                        {capturedError.message}
+                      </p>
+                      <div className="flex gap-1.5 mt-2">
+                        <Button
+                          size="sm"
+                          className="rounded-full h-6 text-[11px] px-2.5"
+                          onClick={handleShareError}
+                          disabled={isSending}
+                        >
+                          Share with agent
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="rounded-full h-6 text-[11px] px-2"
+                          onClick={() => setCapturedError(null)}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setCapturedError(null)}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      aria-label="Dismiss"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </Alert>
+                </div>
+              )}
             </div>
           )}
         </ResizablePanel>
