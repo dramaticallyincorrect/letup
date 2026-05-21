@@ -5,7 +5,7 @@ a marketplace for user created app
 ## v1
 
 
-1. change title in long conversation lags
+1. ~~change title in long conversation lags~~
 2. submissions called multiple times
 3. logo
 4. google sign in prod access

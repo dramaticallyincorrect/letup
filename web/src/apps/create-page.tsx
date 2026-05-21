@@ -107,8 +107,6 @@ function ChatComposer({
   onStop,
   selectedModel,
   onModelChange,
-  inputValue,
-  setInputValue,
   billing,
 }: {
   isSending: boolean
@@ -118,10 +116,10 @@ function ChatComposer({
   onStop: () => void
   selectedModel: ModelID
   onModelChange: (m: ModelID) => void
-  inputValue: string
-  setInputValue: (s: string) => void
   billing: client.BillingStatus | undefined
 }) {
+  const [inputValue, setInputValue] = useState('')
+
   function submit() {
     if (!inputValue.trim() || isSending) return
     onSend(inputValue)
@@ -216,6 +214,23 @@ function ChatComposer({
   )
 }
 
+function AppNameInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [local, setLocal] = useState(value)
+
+  useEffect(() => {
+    setLocal(value)
+  }, [value])
+
+  return (
+    <input
+      className="text-[15px] font-bold bg-transparent border-0 px-1.5 py-0.5 -mx-1.5 rounded-md text-foreground font-sans outline-none tracking-[-0.01em] hover:bg-secondary focus:bg-secondary transition-colors truncate"
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={() => onChange(local)}
+    />
+  )
+}
+
 export function CreatePage() {
   return <CreatePageInner />
 }
@@ -251,7 +266,6 @@ export function CreatePageInner({
   const [initError, setInitError] = useState<string | null>(null)
   const [lowCreditsBalance, setLowCreditsBalance] = useState<number | null>(null)
   const [selectedModel, setSelectedModel] = useState<ModelID>(DEFAULT_MODEL)
-  const [inputValue, setInputValue] = useState('')
   const [hasShownVersion, setHasShownVersion] = useState<boolean>(initialCompiledCode != null)
   const [capturedError, setCapturedError] = useState<{ message: string; stack?: string } | null>(null)
   const verifyCollectorRef = useRef<{ checkId: string; errors: RuntimeErrorReport[] } | null>(null)
@@ -593,11 +607,7 @@ export function CreatePageInner({
           <div className="px-5 py-3.5 flex items-center gap-3 shrink-0 relative">
             <AppIcon tint={currentTint} glyph={currentGlyph} size="md" />
             <div className="flex flex-col min-w-0 flex-1">
-              <input
-                className="text-[15px] font-bold bg-transparent border-0 px-1.5 py-0.5 -mx-1.5 rounded-md text-foreground font-sans outline-none tracking-[-0.01em] hover:bg-secondary focus:bg-secondary transition-colors truncate"
-                value={appName}
-                onChange={e => setAppName(e.target.value)}
-              />
+              <AppNameInput value={appName} onChange={setAppName} />
 
             </div>
             <span
@@ -824,8 +834,6 @@ export function CreatePageInner({
             onStop={handleStop}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
-            inputValue={inputValue}
-            setInputValue={setInputValue}
             billing={billing}
           />
         </ResizablePanel>
