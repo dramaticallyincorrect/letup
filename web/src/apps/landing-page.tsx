@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -76,6 +76,8 @@ function TintIcon({ tint, glyph, className }: { tint: string; glyph: string; cla
 }
 
 function LandingNav() {
+  const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
   return (
     <header
       className="sticky top-0 z-50 border-b"
@@ -128,28 +130,46 @@ function LandingNav() {
         <div className="flex-1" />
 
         {/* Auth CTAs */}
-        <Link
-          to="/login"
-          className="font-semibold text-sm no-underline px-3.5 py-2 rounded-lg mr-1 transition-opacity"
-          style={{ color: CORAL.heroInk, opacity: 0.7 }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
-        >
-          Sign in
-        </Link>
-        <Link
-          to="/signup"
-          className="inline-flex items-center h-9 px-5 rounded-full font-bold text-sm no-underline transition-[filter]"
-          style={{
-            background: CORAL.ctaBg,
-            color: CORAL.ctaColor,
-            boxShadow: '0 1px 4px oklch(0.165 0.018 68 / 0.12)',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.filter = 'brightness(1.06)')}
-          onMouseLeave={e => (e.currentTarget.style.filter = 'none')}
-        >
-          Sign up free
-        </Link>
+        {isLoggedIn ? (
+          <Link
+            to="/home"
+            className="inline-flex items-center h-9 px-5 rounded-full font-bold text-sm no-underline transition-[filter]"
+            style={{
+              background: CORAL.ctaBg,
+              color: CORAL.ctaColor,
+              boxShadow: '0 1px 4px oklch(0.165 0.018 68 / 0.12)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.filter = 'brightness(1.06)')}
+            onMouseLeave={e => (e.currentTarget.style.filter = 'none')}
+          >
+            Go to app
+          </Link>
+        ) : (
+          <>
+            <Link
+              to="/login"
+              className="font-semibold text-sm no-underline px-3.5 py-2 rounded-lg mr-1 transition-opacity"
+              style={{ color: CORAL.heroInk, opacity: 0.7 }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+              onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
+            >
+              Sign in
+            </Link>
+            <Link
+              to="/signup"
+              className="inline-flex items-center h-9 px-5 rounded-full font-bold text-sm no-underline transition-[filter]"
+              style={{
+                background: CORAL.ctaBg,
+                color: CORAL.ctaColor,
+                boxShadow: '0 1px 4px oklch(0.165 0.018 68 / 0.12)',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.filter = 'brightness(1.06)')}
+              onMouseLeave={e => (e.currentTarget.style.filter = 'none')}
+            >
+              Sign up free
+            </Link>
+          </>
+        )}
       </div>
     </header>
   )
@@ -500,6 +520,15 @@ function LandingFooter() {
 }
 
 export function LandingPage() {
+  const { data: session } = useSession()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (session?.user) {
+      navigate({ to: '/home' })
+    }
+  }, [session])
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <LandingNav />
