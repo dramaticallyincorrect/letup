@@ -2,7 +2,8 @@ import { Link } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { TINT_STYLES } from './app-icon'
-import { PlusIcon } from 'lucide-react'
+import { PlusIcon, Sun, Moon } from 'lucide-react'
+import { useTheme } from '@/lib/use-theme'
 
 type Props = {
   active: 'library' | 'marketplace' | 'dashboard'
@@ -11,6 +12,7 @@ type Props = {
 }
 
 export function Chrome({ active }: Props) {
+  const { theme, toggle } = useTheme()
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-xl font-sans" style={{ backdropFilter: 'blur(20px) saturate(140%)' }}>
       <div className="max-w-7xl mx-auto px-8 py-4 flex items-center gap-6">
@@ -55,6 +57,10 @@ export function Chrome({ active }: Props) {
         </nav>
 
         <div className="flex-1" />
+
+        <Button variant="ghost" size="icon" onClick={toggle} className="text-muted-foreground hover:text-foreground" aria-label="Toggle theme">
+          {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+        </Button>
 
         <Button asChild size="sm">
           <Link to="/create">

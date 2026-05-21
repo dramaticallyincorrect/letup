@@ -653,7 +653,7 @@ export function CreatePageInner({
             {messages.map((m, i) => {
               if (m.role === 'user') {
                 return (
-                  <div key={i} className="flex border-r ml-12 border-r-fuchsia-600 animate-soft-pop bg-secondary/50 p-2 rounded min-w-0">
+                  <div key={i} className="flex border-r ml-12 border-r-fuchsia-600 animate-soft-pop bg-muted p-2 rounded min-w-0">
                     <div
                       className="max-w-[85%] min-w-0 leading-[1.55] font-medium"
                     >
@@ -671,7 +671,7 @@ export function CreatePageInner({
                       <div>
                         {/* Thinking: animated indicator while thinking, accordion when done */}
                         {m.streaming && m.thinking && !m.content && (
-                          <div className="flex items-center gap-2 text-[12px] text-muted-foreground italic">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground italic">
                             <Sparkles className="size-3.5 text-accent animate-pulse" />
                             <span>thinking</span>
                             <span className="inline-flex gap-1 ml-1">
@@ -684,7 +684,7 @@ export function CreatePageInner({
 
                         {/* Text content or initial waiting dots */}
                         {m.content ? (
-                          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-[14.5px] leading-[1.55] break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                          <div className="prose prose-sm max-w-none leading-[1.55] wrap-break-word [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 mt-2">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                           </div>
                         ) : m.streaming && !m.thinking ? (
