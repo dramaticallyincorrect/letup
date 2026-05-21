@@ -1,1 +1,0 @@
-ALTER TABLE "user_subscriptions" ADD COLUMN "billing_cycle" text DEFAULT 'monthly' NOT NULL;
