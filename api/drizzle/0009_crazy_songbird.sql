@@ -72,31 +72,79 @@ ALTER TABLE "marketplace_listings" ADD COLUMN IF NOT EXISTS "app_version_id" uui
 ALTER TABLE "marketplace_submissions" ADD COLUMN IF NOT EXISTS "version_id" uuid;
 --> statement-breakpoint
 -- Add unique constraints on new columns
-ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_unique" UNIQUE("app_version_id");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_listings_app_version_id_unique') THEN
+    ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_unique" UNIQUE("app_version_id");
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_unique" UNIQUE("version_id");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_version_id_unique') THEN
+    ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_unique" UNIQUE("version_id");
+  END IF;
+END $$;
 --> statement-breakpoint
 -- Add FK from marketplace tables to app_versions
-ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_listings_app_version_id_app_versions_id_fk') THEN
+    ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_app_versions_id_fk" FOREIGN KEY ("version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_version_id_app_versions_id_fk') THEN
+    ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_app_versions_id_fk" FOREIGN KEY ("version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
 --> statement-breakpoint
 -- Add new FK constraints pointing to user table (NOT VALID skips check on orphaned rows from old users table)
-ALTER TABLE "ai_usage_logs" ADD CONSTRAINT "ai_usage_logs_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_usage_logs_user_id_user_id_fk') THEN
+    ALTER TABLE "ai_usage_logs" ADD CONSTRAINT "ai_usage_logs_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "ai_usage_logs" ADD CONSTRAINT "ai_usage_logs_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE set null ON UPDATE no action NOT VALID;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_usage_logs_app_version_id_app_versions_id_fk') THEN
+    ALTER TABLE "ai_usage_logs" ADD CONSTRAINT "ai_usage_logs_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE set null ON UPDATE no action NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "apps" ADD CONSTRAINT "apps_creator_id_user_id_fk" FOREIGN KEY ("creator_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'apps_creator_id_user_id_fk') THEN
+    ALTER TABLE "apps" ADD CONSTRAINT "apps_creator_id_user_id_fk" FOREIGN KEY ("creator_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "user_app_installs" ADD CONSTRAINT "user_app_installs_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_app_installs_user_id_user_id_fk') THEN
+    ALTER TABLE "user_app_installs" ADD CONSTRAINT "user_app_installs_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "user_credits" ADD CONSTRAINT "user_credits_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_credits_user_id_user_id_fk') THEN
+    ALTER TABLE "user_credits" ADD CONSTRAINT "user_credits_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_submitted_by_user_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_submitted_by_user_id_fk') THEN
+    ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_submitted_by_user_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'session_user_id_user_id_fk') THEN
+    ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'account_user_id_user_id_fk') THEN
+    ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
 --> statement-breakpoint
 CREATE INDEX "account_userId_idx" ON "account" USING btree ("user_id");
 --> statement-breakpoint

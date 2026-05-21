@@ -50,17 +50,6 @@ function getBillingStatus(fastify: Fastify) {
   })
 }
 
-// Currencies Paddle treats as zero-decimal (amount already in major units)
-const ZERO_DECIMAL_CURRENCIES = new Set([
-  'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA',
-  'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
-])
-
-function minorToMajor(minorUnits: string, currencyCode: string): number {
-  const value = parseFloat(minorUnits)
-  return ZERO_DECIMAL_CURRENCIES.has(currencyCode.toUpperCase()) ? value : value / 100
-}
-
 function getBillingPortal(fastify: Fastify) {
   fastify.get('/billing/portal', async (request, reply) => {
     const userId = request.assertAuthenticated()
