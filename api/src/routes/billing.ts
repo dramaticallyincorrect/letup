@@ -19,7 +19,6 @@ const paddle = new Paddle(process.env.PADDLE_API_KEY!, {
 
 const billingPlugin: FastifyPluginAsync = async (fastify) => {
   getBillingStatus(fastify as Fastify)
-  getBillingPrices(fastify as Fastify)
   getBillingPortal(fastify as Fastify)
   void fastify.register(webhookPlugin)
 }
@@ -60,66 +59,6 @@ const ZERO_DECIMAL_CURRENCIES = new Set([
 function minorToMajor(minorUnits: string, currencyCode: string): number {
   const value = parseFloat(minorUnits)
   return ZERO_DECIMAL_CURRENCIES.has(currencyCode.toUpperCase()) ? value : value / 100
-}
-
-function getBillingPrices(fastify: Fastify) {
-  fastify.get('/billing/prices', async (request, reply) => {
-    const monthlyPriceId = process.env.MONTHLY_PREMIUM_PRICE
-    const annualPriceId = process.env.ANNUAL_PREMIUM_PRICE_ID
-
-    const items: { priceId: string; quantity: number }[] = []
-    if (monthlyPriceId) items.push({ priceId: monthlyPriceId, quantity: 1 })
-    if (annualPriceId) items.push({ priceId: annualPriceId, quantity: 1 })
-
-    if (items.length === 0) {
-      return reply.send({ monthly: null, annual: null, currencyCode: 'USD' })
-    }
-
-    const preview = await paddle.pricingPreview.preview({
-      items,
-      customerIpAddress: request.ip ?? null,
-    })
-
-    const currency = preview.currencyCode as string
-    const locale = (request.headers['accept-language'] ?? 'en-US').split(',')[0]
-    const byPriceId = new Map(
-      preview.details.lineItems.map(item => [item.price.id, item]),
-    )
-
-    const monthlyItem = monthlyPriceId ? byPriceId.get(monthlyPriceId) : undefined
-    const annualItem = annualPriceId ? byPriceId.get(annualPriceId) : undefined
-
-    const annualMinor = annualItem ? parseFloat(annualItem.totals.total) : null
-    const monthlyMinor = monthlyItem ? parseFloat(monthlyItem.totals.total) : null
-
-    // Compute annual/12 in major units and format matching the user's locale
-    const decimals = ZERO_DECIMAL_CURRENCIES.has(currency.toUpperCase()) ? 0 : 2
-    const annualMonthlyFormatted = annualMinor !== null
-      ? new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency,
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-      }).format(annualMinor / (decimals === 0 ? 1 : 100) / 12)
-      : null
-
-    return reply.send({
-      currencyCode: currency,
-      monthly: monthlyMinor !== null
-        ? {
-          total: String(minorToMajor(String(monthlyMinor), currency)),
-          formatted: monthlyItem!.formattedTotals.total,
-        }
-        : null,
-      annual: annualMinor !== null
-        ? {
-          total: String(minorToMajor(String(annualMinor), currency)),
-          formatted: annualItem!.formattedTotals.total,
-          monthlyFormatted: annualMonthlyFormatted,
-        }
-        : null,
-    })
-  })
 }
 
 function getBillingPortal(fastify: Fastify) {

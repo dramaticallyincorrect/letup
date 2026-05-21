@@ -230,11 +230,6 @@ export type BillingPrices = {
   annual: BillingPriceItem | null
 }
 
-export async function getBillingPrices(): Promise<BillingPrices> {
-  const res = await apiFetch('/billing/prices')
-  return res.json()
-}
-
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 export async function getUser(): Promise<User> {
