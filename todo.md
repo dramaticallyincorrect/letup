@@ -15,7 +15,7 @@ a marketplace for user created app
 8. google sign in prod access
 9. coolify health checks
 10. collapse conversation, only show the model text output
-11. add to library activates when auto fix is running
+11. ~~add to library activates when auto fix is running~~
 12. play a small sound when build is done
 13. empty view for my apps
 14. ~~edit not opening on first try~~

@@ -274,8 +274,8 @@ export function CreatePageInner({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages])
 
-  const status = isSending ? 'thinking' : compiledCode ? 'ready' : 'draft'
-  const statusLabel = isSending ? 'Thinking' : compiledCode ? 'Ready' : 'Draft'
+  const status = isSending ? 'thinking' : hasShownVersion ? 'ready' : 'draft'
+  const statusLabel = isSending ? 'Thinking' : hasShownVersion ? 'Ready' : 'Draft'
 
   const currentTint = widgetId ? getAppTint(widgetId) : 'coral'
   const currentGlyph = getAppGlyph(appName)
@@ -425,8 +425,8 @@ export function CreatePageInner({
             if (!c) return
             try {
               if (c.errors.length === 0) {
-                await client.reportRuntimeResult(c.checkId, { ok: true })
                 setHasShownVersion(true)
+                await client.reportRuntimeResult(c.checkId, { ok: true })
               } else {
                 const seen = new Set<string>()
                 const deduped = c.errors.filter(e => seen.has(e.message) ? false : (seen.add(e.message), true))
@@ -620,9 +620,9 @@ export function CreatePageInner({
             </span>
             <Button
               size="sm"
-              disabled={!compiledCode}
+              disabled={!hasShownVersion}
               onClick={handleSave}
-              variant={compiledCode ? 'default' : 'outline'}
+              variant={hasShownVersion ? 'default' : 'outline'}
               className="rounded-full"
             >
               <Sparkles className="size-3.5" />
