@@ -456,8 +456,8 @@ function escapeJsonForScript(s: string): string {
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
-    .split(' ').join('\\u2028')
-    .split(' ').join('\\u2029')
+    .split('').join('\\u2028')
+    .split('').join('\\u2029')
 }
 
 function escapeForStyle(s: string): string {
@@ -480,8 +480,8 @@ function renderAppShell(opts: {
   draft: boolean
 }): string {
   const title = escapeHtml(opts.name ?? 'App')
-  const css = escapeForStyle(opts.cssCode ?? '')
-  const context = escapeJsonForScript(JSON.stringify({ appId: opts.appId, draft: opts.draft }))
+  const css = opts.cssCode ?? ''
+  const context = JSON.stringify({ appId: opts.appId, draft: opts.draft })
   const bundleSrc = `/apps/${opts.appId}/bundle.js${opts.draft ? '?draft=true' : ''}`
   return `<!DOCTYPE html>
 <html>
