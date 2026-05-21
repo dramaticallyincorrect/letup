@@ -96,9 +96,9 @@ function LandingNav() {
             className="size-6.5 rounded-lg grid place-items-center text-sm font-bold text-white"
             style={{ background: 'var(--accent)' }}
           >
-            m
+            L
           </span>
-          mini
+          Letup
         </div>
 
         {/* Nav links */}
@@ -478,9 +478,9 @@ function LandingFooter() {
             className="size-5.5 rounded-sm grid place-items-center text-xs font-bold text-white"
             style={{ background: 'var(--accent)' }}
           >
-            m
+            L
           </span>
-          mini
+          Letup
         </div>
         <div className="flex gap-6">
           {([['Terms of Service', '/terms'], ['Privacy Policy', '/privacy'], ['Refund Policy', '/refund']] as const).map(([label, to]) => (
