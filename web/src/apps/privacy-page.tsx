@@ -30,12 +30,24 @@ export function PrivacyPage() {
 
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-foreground">3. How We Use Your Information</h2>
+          <p className="text-muted-foreground leading-relaxed">
+            We process your information on the following legal bases under GDPR Article 6:
+          </p>
           <ul className="list-disc list-inside space-y-2 text-muted-foreground leading-relaxed">
-            <li>To provide, maintain, and improve the letup service.</li>
-            <li>To process payments and manage your subscription.</li>
-            <li>To send service-related communications (account updates, billing receipts).</li>
-            <li>To monitor usage against your plan limits and detect abuse.</li>
-            <li>To respond to support requests sent to support@letup.ai.</li>
+            <li>
+              <span className="font-medium text-foreground">Performance of a contract (Art. 6(1)(b)):</span> To
+              provide, maintain, and improve the letup service; to process payments and manage your subscription;
+              to send service-related communications (account updates, billing receipts); and to monitor usage
+              against your plan limits.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Legitimate interests (Art. 6(1)(f)):</span> To detect
+              and prevent abuse, fraud, and security incidents.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Performance of a contract (Art. 6(1)(b)):</span> To
+              respond to support requests sent to support@letup.ai.
+            </li>
           </ul>
         </section>
 
@@ -57,13 +69,16 @@ export function PrivacyPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground">5. Third-Party Services</h2>
+          <h2 className="text-lg font-semibold text-foreground">5. Third-Party Services and International Transfers</h2>
           <ul className="list-disc list-inside space-y-2 text-muted-foreground leading-relaxed">
-            <li><span className="font-medium text-foreground">Paddle</span> — payment processing and subscription management.</li>
-            <li><span className="font-medium text-foreground">Anthropic</span> — AI model inference for app generation and execution.</li>
+            <li><span className="font-medium text-foreground">Paddle</span> — payment processing and subscription management. Paddle operates as our Merchant of Record and processes billing data in accordance with its own privacy policy.</li>
+            <li><span className="font-medium text-foreground">Anthropic</span> — AI model inference for app generation and execution. Content you submit to AI features is processed by Anthropic's systems in the United States.</li>
           </ul>
           <p className="text-muted-foreground leading-relaxed">
-            Each third party has its own privacy policy governing how they handle data we share with them.
+            Both Paddle and Anthropic are based in the United States. Where we transfer personal data outside the
+            European Economic Area (EEA), we rely on appropriate safeguards such as the European Commission's
+            Standard Contractual Clauses (SCCs) or an applicable adequacy decision. Each third party has its own
+            privacy policy governing how they handle data we share with them.
           </p>
         </section>
 
@@ -79,8 +94,19 @@ export function PrivacyPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-foreground">7. Your Rights</h2>
           <p className="text-muted-foreground leading-relaxed">
-            You may request access to, correction of, or deletion of your personal data at any time by contacting
-            us at{' '}
+            Under GDPR and applicable data protection law, you have the following rights regarding your personal data:
+          </p>
+          <ul className="list-disc list-inside space-y-2 text-muted-foreground leading-relaxed">
+            <li><span className="font-medium text-foreground">Access:</span> Request a copy of the personal data we hold about you.</li>
+            <li><span className="font-medium text-foreground">Correction:</span> Request that we correct inaccurate or incomplete data.</li>
+            <li><span className="font-medium text-foreground">Deletion:</span> Request that we delete your personal data, subject to legal retention obligations.</li>
+            <li><span className="font-medium text-foreground">Portability:</span> Receive your data in a structured, machine-readable format and transfer it to another controller.</li>
+            <li><span className="font-medium text-foreground">Restriction:</span> Request that we limit how we process your data in certain circumstances.</li>
+            <li><span className="font-medium text-foreground">Objection:</span> Object to processing based on our legitimate interests.</li>
+            <li><span className="font-medium text-foreground">Supervisory authority:</span> Lodge a complaint with the Dutch Data Protection Authority (Autoriteit Persoonsgegevens) at <span className="text-foreground">autoriteitpersoonsgegevens.nl</span>, or with the supervisory authority in your country of residence.</li>
+          </ul>
+          <p className="text-muted-foreground leading-relaxed">
+            To exercise any of these rights, contact us at{' '}
             <a href="mailto:support@letup.ai" className="text-foreground underline hover:opacity-70 transition-opacity">
               support@letup.ai
             </a>
@@ -89,7 +115,17 @@ export function PrivacyPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground">8. Security</h2>
+          <h2 className="text-lg font-semibold text-foreground">8. Cookies and Tracking</h2>
+          <p className="text-muted-foreground leading-relaxed">
+            We use cookies and similar technologies strictly necessary to operate the service, including session
+            authentication cookies. We do not use third-party advertising or cross-site tracking cookies. If we
+            introduce non-essential cookies in the future, we will update this policy and obtain your consent
+            where required by law.
+          </p>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold text-foreground">9. Security</h2>
           <p className="text-muted-foreground leading-relaxed">
             We use industry-standard measures to protect your data, including encrypted connections (HTTPS) and
             hashed passwords. No method of transmission over the internet is 100% secure, and we cannot guarantee
@@ -98,16 +134,17 @@ export function PrivacyPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground">9. Changes to This Policy</h2>
+          <h2 className="text-lg font-semibold text-foreground">10. Changes to This Policy</h2>
           <p className="text-muted-foreground leading-relaxed">
-            We may update this Privacy Policy from time to time. We will notify you of material changes by posting
-            the new policy on this page with an updated date. Continued use of letup after changes constitutes
-            acceptance of the revised policy.
+            We may update this Privacy Policy from time to time. For material changes, we will notify you by email
+            or by a prominent notice within the service at least 14 days before the change takes effect. The updated
+            date at the top of this page reflects the most recent revision. Where a change requires fresh consent
+            under applicable law, we will ask for it explicitly rather than relying on continued use.
           </p>
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground">10. Contact</h2>
+          <h2 className="text-lg font-semibold text-foreground">11. Contact</h2>
           <p className="text-muted-foreground leading-relaxed">
             For privacy-related questions or requests, contact us at{' '}
             <a href="mailto:support@letup.ai" className="text-foreground underline hover:opacity-70 transition-opacity">

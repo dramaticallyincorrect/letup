@@ -10,8 +10,9 @@ export function TermsPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-foreground">1. Acceptance of Terms</h2>
           <p className="text-muted-foreground leading-relaxed">
-            By accessing or using letup.ai ("letup"), operated by Dramatically Incorrect, you agree to be bound
-            by these Terms of Service. If you do not agree, please do not use the service.
+            By accessing or using letup.ai ("letup"), you agree to be bound by these Terms of Service. letup.ai
+            is operated by Dramatically Incorrect, the legal entity responsible for the service. If you do not
+            agree, please do not use the service.
           </p>
         </section>
 
@@ -59,10 +60,24 @@ export function TermsPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-foreground">5. Billing</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Paid plans are billed in advance on a monthly or annual basis through Paddle, our payment processor.
-            By subscribing, you authorize Paddle to charge your payment method on a recurring basis until you
-            cancel. You can cancel your subscription at any time from your account settings; cancellation takes
-            effect at the end of your current billing period.
+            Paid plans are billed in advance on a monthly or annual basis through{' '}
+            <span className="font-medium text-foreground">Paddle</span>, our Merchant of Record. When you subscribe,
+            you are entering into a purchase transaction with Paddle, and your payment method will be charged by
+            Paddle. By subscribing, you also agree to{' '}
+            <a
+              href="https://www.paddle.com/legal/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground underline hover:opacity-70 transition-opacity"
+            >
+              Paddle's Terms of Use
+            </a>
+            . Your billing statement will show a charge from "Paddle.com" or "Paddle.net" — this is expected and
+            represents your letup subscription.
+          </p>
+          <p className="text-muted-foreground leading-relaxed">
+            You can cancel your subscription at any time from your account settings; cancellation takes effect at
+            the end of your current billing period.
           </p>
         </section>
 
@@ -171,16 +186,21 @@ export function TermsPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-foreground">13. Governing Law</h2>
           <p className="text-muted-foreground leading-relaxed">
-            These Terms are governed by the laws of the jurisdiction in which Dramatically Incorrect is registered,
-            without regard to conflict of law principles.
+            These Terms are governed by the laws of the Netherlands, without regard to conflict of law principles.
+            Any disputes arising from or relating to these Terms shall be subject to the exclusive jurisdiction of
+            the competent courts of the Netherlands, unless mandatory consumer protection law in your country of
+            residence grants you the right to bring proceedings before your local courts.
           </p>
         </section>
 
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-foreground">14. Changes to Terms</h2>
           <p className="text-muted-foreground leading-relaxed">
-            We may update these Terms from time to time. We will notify you of material changes by posting the
-            updated Terms on this page. Continued use of letup after changes constitutes acceptance.
+            We may update these Terms from time to time. For material changes, we will notify you by email or
+            by a prominent in-app notice at least 14 days before the changes take effect. If you are on a paid
+            plan and do not agree to the updated Terms, you may cancel before the effective date and receive a
+            prorated refund for any unused portion of your current billing period. Continuing to use letup after
+            the effective date constitutes acceptance of the revised Terms.
           </p>
         </section>
 
