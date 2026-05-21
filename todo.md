@@ -7,34 +7,17 @@ a marketplace for user created app
 
 1. change title in long conversation lags
 2. submissions called multiple times
-3. ~~limit free tier to 3 app installs~~
-4. ~~annual pro subscription~~
-5. ~~rename marketplace to app store~~
-6. ~~terms of services~~
-7. ~~privacy policy~~
-8. google sign in prod access
-9. coolify health checks
-10. collapse conversation, only show the model text output
-11. ~~add to library activates when auto fix is running~~
-12. play a small sound when build is done
-13. empty view for my apps
-14. ~~edit not opening on first try~~
-15. ~~share console logs with ai~~
-   1. ~~in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai~~
-16. analytics
-17. builder
-    1.  include border and shadow in default styles.css
-    2.  give build tool
-    3.  try Todo tool
-    4.  try having db and ai module out of prompt and on demand
-    5.  https://gemini.google.com/app/f49e77135be7c241
-    6.  back to ask questions to clarify
-    7.  try one with plan + thinking and one without
-    8.  research context optimizations
-18. landing page
-   1. header when already signed in
-   2. add screen shot of my apps
-19. go through the core workflows and review the code
+3. logo
+4. google sign in prod access
+   1. check and verify logo , https://console.cloud.google.com/auth/branding?project=letup1
+5.  coolify health checks
+9.  analytics
+    1. app opened
+       1. app id
+       2. creator or not
+11. add screen shot of my apps to landing page
+12. make sure data is backed up by hetzner
+13. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place
@@ -49,17 +32,32 @@ a marketplace for user created app
 ## out of scope
 
 1. updates to the app with database change when submiting to marketplace
-2. share app data or component code with other apps
-3. canvas that can host multiple self contained components
-4. shared (between users) database
-5. open apps side by side
-6. install created apps from dashboard
-11. submit updates to marketplace
-12. github to store versions
-10. plan when and how should apps be deleted, complete removal or always only marked as deleted
-11. official apps
-12. credit
+2. plan when and how should apps be deleted, complete removal or always only marked as deleted
+3. share app data or component code with other apps
+4. canvas that can host multiple self contained components
+   1. the main page be a editable canvas itself, with default apps like header
+5. shared (between users) database
+6. open apps side by side
+7. install created apps from dashboard
+8.  submit updates to marketplace
+9.  github to store versions
+10. official apps
+    10. builder
+    1.  include border and shadow in default styles.css
+    2.  give build tool
+    3.  try Todo tool
+    4.  try having db and ai module out of prompt and on demand
+    5.  https://gemini.google.com/app/f49e77135be7c241
+    6.  back to ask questions to clarify
+    7.  try one with plan + thinking and one without
+    8.  research context optimizations
+11. credit
     1. credit top up
+ 12. users choose the colors
+     1.  use across apps option
+ 13. collapse conversation, only show the model text output
+ 14. play a small sound when build is done
+ 15. empty view for my apps
 
 
 

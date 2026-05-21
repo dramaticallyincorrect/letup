@@ -63,7 +63,7 @@ function MorphingAppIcon({ size }: { size: 'lg' | 'xl' }) {
   return (
     <div
       className={cn('grid place-items-center shrink-0 font-medium', MORPH_SIZE_CLASS[size])}
-      style={TINT_STYLES.coral}
+      style={TINT_STYLES.indigo}
     >
       <span key={index} className="animate-morph-in inline-block leading-none">
         {MORPH_GLYPHS[index]}
@@ -643,11 +643,11 @@ export function CreatePageInner({
             {messages.map((m, i) => {
               if (m.role === 'user') {
                 return (
-                  <div key={i} className="flex border-l border-s-fuchsia-600 animate-soft-pop bg-secondary/50 p-2 rounded min-w-0">
+                  <div key={i} className="flex border-r ml-12 border-r-fuchsia-600 animate-soft-pop bg-secondary/50 p-2 rounded min-w-0">
                     <div
                       className="max-w-[85%] min-w-0 leading-[1.55] font-medium"
                     >
-                      <div className="prose prose-sm max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:m-0">
+                      <div className="prose prose-sm max-w-none wrap-break-word [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:m-0">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                       </div>
                     </div>
