@@ -51,49 +51,53 @@ CREATE TABLE "verification" (
 );
 --> statement-breakpoint
 -- Drop old FK constraints referencing users (actual constraint names in DB)
-ALTER TABLE "ai_usage_logs" DROP CONSTRAINT "ai_usage_logs_user_id_users_id_fk";
+ALTER TABLE "ai_usage_logs" DROP CONSTRAINT IF EXISTS "ai_usage_logs_user_id_users_id_fk";
 --> statement-breakpoint
-ALTER TABLE "user_credits" DROP CONSTRAINT "user_credits_user_id_users_id_fk";
+ALTER TABLE "user_credits" DROP CONSTRAINT IF EXISTS "user_credits_user_id_users_id_fk";
 --> statement-breakpoint
-ALTER TABLE "marketplace_submissions" DROP CONSTRAINT "marketplace_submissions_submitted_by_users_id_fk";
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'marketplace_submissions') THEN
+    ALTER TABLE "marketplace_submissions" DROP CONSTRAINT IF EXISTS "marketplace_submissions_submitted_by_users_id_fk";
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "user_app_installs" DROP CONSTRAINT "user_app_installs_user_id_fkey";
+ALTER TABLE "user_app_installs" DROP CONSTRAINT IF EXISTS "user_app_installs_user_id_fkey";
 --> statement-breakpoint
-ALTER TABLE "apps" DROP CONSTRAINT "apps_creator_id_fkey";
+ALTER TABLE "apps" DROP CONSTRAINT IF EXISTS "apps_creator_id_fkey";
 --> statement-breakpoint
 -- Drop old users table
-ALTER TABLE "users" DISABLE ROW LEVEL SECURITY;
---> statement-breakpoint
-DROP TABLE "users" CASCADE;
---> statement-breakpoint
--- Add missing columns to existing marketplace tables
-ALTER TABLE "marketplace_listings" ADD COLUMN IF NOT EXISTS "app_version_id" uuid;
---> statement-breakpoint
-ALTER TABLE "marketplace_submissions" ADD COLUMN IF NOT EXISTS "version_id" uuid;
---> statement-breakpoint
--- Add unique constraints on new columns
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_listings_app_version_id_unique') THEN
-    ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_unique" UNIQUE("app_version_id");
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+    ALTER TABLE "users" DISABLE ROW LEVEL SECURITY;
+    DROP TABLE "users" CASCADE;
+  END IF;
+END $$;
+--> statement-breakpoint
+-- Add missing columns to existing marketplace tables (only if tables exist — they were created manually on prod)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'marketplace_listings') THEN
+    ALTER TABLE "marketplace_listings" ADD COLUMN IF NOT EXISTS "app_version_id" uuid;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_listings_app_version_id_unique') THEN
+      ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_unique" UNIQUE("app_version_id");
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_listings_app_version_id_app_versions_id_fk') THEN
+      ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+    END IF;
   END IF;
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_version_id_unique') THEN
-    ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_unique" UNIQUE("version_id");
-  END IF;
-END $$;
---> statement-breakpoint
--- Add FK from marketplace tables to app_versions
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_listings_app_version_id_app_versions_id_fk') THEN
-    ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
-  END IF;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_version_id_app_versions_id_fk') THEN
-    ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_app_versions_id_fk" FOREIGN KEY ("version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'marketplace_submissions') THEN
+    ALTER TABLE "marketplace_submissions" ADD COLUMN IF NOT EXISTS "version_id" uuid;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_version_id_unique') THEN
+      ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_unique" UNIQUE("version_id");
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_version_id_app_versions_id_fk') THEN
+      ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_version_id_app_versions_id_fk" FOREIGN KEY ("version_id") REFERENCES "public"."app_versions"("id") ON DELETE cascade ON UPDATE no action;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_submitted_by_user_id_fk') THEN
+      ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_submitted_by_user_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
+    END IF;
   END IF;
 END $$;
 --> statement-breakpoint
@@ -105,7 +109,8 @@ DO $$ BEGIN
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_usage_logs_app_version_id_app_versions_id_fk') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_usage_logs' AND column_name = 'app_version_id')
+     AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_usage_logs_app_version_id_app_versions_id_fk') THEN
     ALTER TABLE "ai_usage_logs" ADD CONSTRAINT "ai_usage_logs_app_version_id_app_versions_id_fk" FOREIGN KEY ("app_version_id") REFERENCES "public"."app_versions"("id") ON DELETE set null ON UPDATE no action NOT VALID;
   END IF;
 END $$;
@@ -125,12 +130,6 @@ END $$;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_credits_user_id_user_id_fk') THEN
     ALTER TABLE "user_credits" ADD CONSTRAINT "user_credits_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
-  END IF;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_submissions_submitted_by_user_id_fk') THEN
-    ALTER TABLE "marketplace_submissions" ADD CONSTRAINT "marketplace_submissions_submitted_by_user_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action NOT VALID;
   END IF;
 END $$;
 --> statement-breakpoint
