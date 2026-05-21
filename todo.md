@@ -13,15 +13,16 @@ a marketplace for user created app
 6. ~~terms of services~~
 7. ~~privacy policy~~
 8. google sign in prod access
-9. collapse conversation, only show the model text output
-10. add to library activates when auto fix is running
-11. play a small sound when build is done
-12. empty view for my apps
-13. ~~edit not opening on first try~~
-14. ~~share console logs with ai~~
+9. coolify health checks
+10. collapse conversation, only show the model text output
+11. add to library activates when auto fix is running
+12. play a small sound when build is done
+13. empty view for my apps
+14. ~~edit not opening on first try~~
+15. ~~share console logs with ai~~
    1. ~~in ai builder, listen for errors. if error is captured show a hint to the user, tell them if the app has issues they can share the captured error with the ai~~
-15. analytics
-16. builder
+16. analytics
+17. builder
     1.  include border and shadow in default styles.css
     2.  give build tool
     3.  try Todo tool
@@ -30,10 +31,10 @@ a marketplace for user created app
     6.  back to ask questions to clarify
     7.  try one with plan + thinking and one without
     8.  research context optimizations
-17. landing page
+18. landing page
    1. header when already signed in
    2. add screen shot of my apps
-18. go through the core workflows and review the code
+19. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place

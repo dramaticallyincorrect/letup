@@ -76,6 +76,7 @@ function getAppSubmission(fastify: Fastify) {
       },
     },
     async (request, reply) => {
+      request.assertAuthenticated()
       const { appId } = request.params
 
       const [submission] = await fastify.db

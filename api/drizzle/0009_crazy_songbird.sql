@@ -67,9 +67,9 @@ ALTER TABLE "users" DISABLE ROW LEVEL SECURITY;
 DROP TABLE "users" CASCADE;
 --> statement-breakpoint
 -- Add missing columns to existing marketplace tables
-ALTER TABLE "marketplace_listings" ADD COLUMN "app_version_id" uuid;
+ALTER TABLE "marketplace_listings" ADD COLUMN IF NOT EXISTS "app_version_id" uuid;
 --> statement-breakpoint
-ALTER TABLE "marketplace_submissions" ADD COLUMN "version_id" uuid;
+ALTER TABLE "marketplace_submissions" ADD COLUMN IF NOT EXISTS "version_id" uuid;
 --> statement-breakpoint
 -- Add unique constraints on new columns
 ALTER TABLE "marketplace_listings" ADD CONSTRAINT "marketplace_listings_app_version_id_unique" UNIQUE("app_version_id");

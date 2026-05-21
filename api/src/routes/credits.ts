@@ -40,7 +40,8 @@ function grantCredits(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
-    const userId = request.body.userId ?? request.assertAuthenticated()
+    request.assertAdmin()
+    const userId = request.body.userId ?? request.userId!
     const amount = BigInt(Math.floor(request.body.amount))
 
     await fastify.db

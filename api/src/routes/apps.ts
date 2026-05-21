@@ -397,6 +397,7 @@ function createDraft(fastify: Fastify) {
     schema: { tags: ['apps'], summary: 'Create a new draft version from the current published version' },
   }, async (request, reply) => {
     const { appId } = request.params
+    request.assertAuthenticated()
 
     // Idempotent: return existing draft if one already exists
     const [latestVersion] = await fastify.db
@@ -431,6 +432,7 @@ function getApp(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId', {
     schema: { tags: ['apps'], summary: 'Get an app by ID' },
   }, async (request, reply) => {
+    request.assertAuthenticated()
     const [row] = await fastify.db
       .select(APP_VERSION_COLUMNS)
       .from(apps)
@@ -518,6 +520,7 @@ function renderApp(fastify: Fastify) {
     '/apps/:appId/bundle.js',
     { schema: { tags: ['apps'], summary: 'Serve the compiled JS bundle for an app version' } },
     async (request, reply) => {
+      request.assertAuthenticated()
       const { appId } = request.params
       const draft = request.query.draft === 'true'
 
@@ -559,6 +562,7 @@ function renderApp(fastify: Fastify) {
     request: import('fastify').FastifyRequest<RenderParams>,
     reply: import('fastify').FastifyReply,
   ) => {
+    request.assertAuthenticated()
     const { appId } = request.params
     const draft = request.query.draft === 'true'
 
@@ -612,6 +616,7 @@ function getAppForEdit(fastify: Fastify) {
     schema: { tags: ['apps'], summary: 'Get an app by ID including conversation history (prefers draft version)' },
   }, async (request, reply) => {
     const { appId } = request.params
+    request.assertAuthenticated()
     const appRow = await fastify.db
       .select({ latestVersionNumber: apps.latestVersionNumber })
       .from(apps)
@@ -651,6 +656,7 @@ function patchApp(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId } = request.params
+    request.assertAuthenticated()
     const patch = request.body
     const [updated] = await fastify.db
       .update(apps)
@@ -1585,6 +1591,7 @@ function queryAppDb(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId } = request.params
+    request.assertAuthenticated()
     const { sql, params = [] } = request.body
     const db = request.query.draft === 'true' ? openDraftDb(appId) : openDb(appId)
     try {
@@ -1612,6 +1619,7 @@ function answerAppQuestion(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
+    request.assertAuthenticated()
     const { questionId, answer } = request.body
     const resolve = pendingQuestions.get(questionId)
     if (!resolve) return reply.code(404).send({ error: 'Question not found or already answered' })
@@ -1637,6 +1645,7 @@ function runtimeResult(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
+    request.assertAuthenticated()
     const { checkId, ok, error } = request.body
     const resolve = pendingRuntimeChecks.get(checkId)
     if (!resolve) return reply.code(404).send({ error: 'check not found or already resolved' })
