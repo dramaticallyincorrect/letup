@@ -587,7 +587,7 @@ export function CreatePageInner({
         <ResizablePanel
           defaultSize='30%'
           minSize='20%'
-          className="flex flex-col min-h-0 bg-linear-to-b from-card via-card to-(--warm) relative"
+          className="flex flex-col min-h-0 bg-linear-to-b from-card via-card to-(--warm) relative overflow-hidden"
         >
           {/* Chat header */}
           <div className="px-5 py-3.5 flex items-center gap-3 shrink-0 relative">
@@ -634,7 +634,7 @@ export function CreatePageInner({
 
           {/* Chat scroll */}
           <div
-            className="flex-1 overflow-y-auto px-6 pt-6 pb-4 flex flex-col gap-4 relative"
+            className="flex-1 overflow-y-auto px-6 pt-6 pb-4 flex flex-col gap-4 relative overflow-hidden"
             ref={scrollRef}
             style={{
               maskImage: 'linear-gradient(to bottom, transparent 0, black 16px, black calc(100% - 8px), black 100%)',
@@ -643,11 +643,11 @@ export function CreatePageInner({
             {messages.map((m, i) => {
               if (m.role === 'user') {
                 return (
-                  <div key={i} className="flex border-l border-s-fuchsia-600 animate-soft-pop bg-secondary/50 p-2 rounded">
+                  <div key={i} className="flex border-l border-s-fuchsia-600 animate-soft-pop bg-secondary/50 p-2 rounded min-w-0">
                     <div
-                      className="max-w-[85%] leading-[1.55] font-medium"
+                      className="max-w-[85%] min-w-0 leading-[1.55] font-medium"
                     >
-                      <div className="prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:m-0">
+                      <div className="prose prose-sm max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:m-0">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                       </div>
                     </div>
@@ -656,7 +656,7 @@ export function CreatePageInner({
               }
               if (m.role === 'assistant') {
                 return (
-                  <div key={i} className="max-w-full animate-soft-pop">
+                  <div key={i} className="max-w-full min-w-0 animate-soft-pop">
                     <div className="text-[14.5px] leading-[1.55] text-foreground">
                       <div>
                         {/* Thinking: animated indicator while thinking, accordion when done */}
@@ -674,7 +674,7 @@ export function CreatePageInner({
 
                         {/* Text content or initial waiting dots */}
                         {m.content ? (
-                          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-[14.5px] leading-[1.55] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-[14.5px] leading-[1.55] break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                           </div>
                         ) : m.streaming && !m.thinking ? (
@@ -691,7 +691,7 @@ export function CreatePageInner({
               }
               if (m.role === 'question') {
                 return (
-                  <div key={i} className="max-w-full animate-soft-pop">
+                  <div key={i} className="max-w-full min-w-0 animate-soft-pop">
                     <div className="min-w-0">
                       <div
                         className="border-l-2 pl-3.5"
