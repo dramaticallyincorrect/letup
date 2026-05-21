@@ -51,9 +51,9 @@ export function LoginPage() {
           className="size-7 rounded-lg grid place-items-center text-sm font-bold text-white"
           style={{ background: 'var(--accent)' }}
         >
-          m
+          L
         </span>
-        <span>mini</span>
+        <span>Letup</span>
       </Link>
 
       {/* Card */}

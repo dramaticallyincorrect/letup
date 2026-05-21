@@ -6,13 +6,10 @@ import { CheckIcon, ArrowLeftIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePaddlePrices } from '@/lib/use-paddle-prices'
 
-const PRO_FEATURES = [
-  '100 credits / month',
+const PRO_FEATURES_TAIL = [
   'Unlimited apps',
   'Publish to the marketplace',
-  'Priority support',
-  'Early access to new features',
-  'Custom app domains',
+  'Priority support'
 ]
 
 export function PaymentPage() {
@@ -139,9 +136,9 @@ export function PaymentPage() {
               className="size-6.5 rounded-lg grid place-items-center text-sm font-bold text-white"
               style={{ background: 'var(--accent)' }}
             >
-              m
+              L
             </span>
-            mini
+            Letup
           </div>
         </div>
       </header>
@@ -199,7 +196,7 @@ export function PaymentPage() {
               Get the most out of letup with pro features. Cancel anytime.
             </p>
             <div className="flex flex-col gap-2">
-              {PRO_FEATURES.map((f) => (
+              {[isAnnual ? '1,200 credits upfront' : '100 credits / month', ...PRO_FEATURES_TAIL].map((f) => (
                 <div key={f} className="flex items-center gap-3">
                   <div
                     className="size-4.5 rounded-full grid place-items-center shrink-0"

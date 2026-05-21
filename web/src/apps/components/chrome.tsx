@@ -19,9 +19,9 @@ export function Chrome({ active }: Props) {
             className="size-6.5 rounded-lg grid place-items-center text-sm font-bold text-white"
             style={{ background: 'var(--accent)' }}
           >
-            m
+            L
           </span>
-          <span>mini</span>
+          <span>Letup</span>
         </Link>
 
         <nav className="flex gap-0.5 ml-2">
