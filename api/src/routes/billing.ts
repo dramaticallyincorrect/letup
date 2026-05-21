@@ -57,28 +57,6 @@ const ZERO_DECIMAL_CURRENCIES = new Set([
   'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
 ])
 
-// Region → currency fallback for when IP is private/localhost
-const REGION_CURRENCY: Record<string, string> = {
-  AT: 'EUR', BE: 'EUR', CY: 'EUR', DE: 'EUR', EE: 'EUR', ES: 'EUR',
-  FI: 'EUR', FR: 'EUR', GR: 'EUR', HR: 'EUR', IE: 'EUR', IT: 'EUR',
-  LT: 'EUR', LU: 'EUR', LV: 'EUR', MT: 'EUR', NL: 'EUR', PT: 'EUR',
-  SI: 'EUR', SK: 'EUR', GB: 'GBP', AU: 'AUD', CA: 'CAD', NZ: 'NZD',
-  JP: 'JPY', CN: 'CNY', IN: 'INR', BR: 'BRL', MX: 'MXN', CH: 'CHF',
-  SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN', CZ: 'CZK', HU: 'HUF',
-  RO: 'RON', SG: 'SGD', HK: 'HKD', KR: 'KRW', TH: 'THB',
-}
-
-function isPrivateIp(ip: string): boolean {
-  return !ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.')
-}
-
-function currencyFromAcceptLanguage(header: string): string | undefined {
-  // Extract region from first locale tag, e.g. "de-DE,de;q=0.9" → "DE"
-  const tag = header.split(',')[0].trim()
-  const region = tag.includes('-') ? tag.split('-').pop()?.toUpperCase() : undefined
-  return region ? REGION_CURRENCY[region] : undefined
-}
-
 function minorToMajor(minorUnits: string, currencyCode: string): number {
   const value = parseFloat(minorUnits)
   return ZERO_DECIMAL_CURRENCIES.has(currencyCode.toUpperCase()) ? value : value / 100

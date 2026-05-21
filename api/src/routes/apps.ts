@@ -448,23 +448,6 @@ function getApp(fastify: Fastify) {
   })
 }
 
-// Escape a JSON string for embedding as a JS expression inside a <script> block.
-// Uses unicode escapes for < > & so the HTML parser can't mis-interpret them,
-// and escapes U+2028 / U+2029 which are line terminators in JS string literals.
-function escapeJsonForScript(s: string): string {
-  return s
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .split('').join('\\u2028')
-    .split('').join('\\u2029')
-}
-
-function escapeForStyle(s: string): string {
-  // Inside <style>, only the closing </style> tag is dangerous.
-  return s.replace(/<\/style/gi, '<\\/style')
-}
-
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -1063,16 +1046,6 @@ function freshCacheable(messages: Anthropic.MessageParam[]): Anthropic.MessagePa
   return markLastTurnCacheable(stripCacheControl(messages))
 }
 
-function extractText(content: Anthropic.MessageParam['content']): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return (content as Array<{ type: string; text?: string }>)
-      .filter(b => b.type === 'text')
-      .map(b => b.text ?? '')
-      .join('')
-  }
-  return ''
-}
 
 function stripCacheControl(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
   return messages.map(msg => {
