@@ -7,6 +7,7 @@ import { Fastify } from '../fastify_type'
 const marketplacePlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   submitApp(fastify)
   getAppSubmission(fastify)
+  getMySubmissions(fastify)
   approveSubmission(fastify)
   rejectSubmission(fastify)
   getMarketplaceListings(fastify)
@@ -86,6 +87,28 @@ function getAppSubmission(fastify: Fastify) {
 
       if (!submission) return reply.status(404).send({ error: 'No submission found' })
       return reply.send(submission)
+    },
+  )
+}
+
+function getMySubmissions(fastify: Fastify) {
+  fastify.get(
+    '/marketplace/my-submissions',
+    {
+      schema: {
+        tags: ['marketplace'],
+        summary: 'Get all submission statuses for the authenticated user\'s apps',
+      },
+    },
+    async (request, reply) => {
+      const userId = request.assertAuthenticated()
+
+      const rows = await fastify.db
+        .select()
+        .from(marketplaceSubmissions)
+        .where(eq(marketplaceSubmissions.submittedBy, userId))
+
+      return reply.send(rows)
     },
   )
 }

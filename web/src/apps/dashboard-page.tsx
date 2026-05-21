@@ -36,18 +36,12 @@ export function DashboardPage() {
   })
 
   const { data: submissions = [] } = useQuery({
-    queryKey: ['dashboard-submissions', apps.map(a => a.id)],
-    queryFn: async () => {
-      const results = await Promise.all(
-        apps.map(a => client.getAppSubmission(a.id).then(s => ({ appId: a.id, submission: s }))),
-      )
-      return results
-    },
-    enabled: apps.length > 0,
+    queryKey: ['dashboard-submissions'],
+    queryFn: client.getMySubmissions,
   })
 
   const submissionByApp = Object.fromEntries(
-    submissions.map(({ appId, submission }) => [appId, submission]),
+    submissions.map(s => [s.appId, s]),
   )
 
   function openSubmitModal(app: client.CreatedAppSummary) {

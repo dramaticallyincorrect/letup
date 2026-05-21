@@ -349,6 +349,11 @@ export async function getAppSubmission(appId: string): Promise<MarketplaceSubmis
   }
 }
 
+export async function getMySubmissions(): Promise<MarketplaceSubmission[]> {
+  const res = await apiFetch('/marketplace/my-submissions')
+  return res.json()
+}
+
 export async function approveSubmission(submissionId: string): Promise<MarketplaceListing> {
   const res = await apiFetch(`/marketplace/submissions/${submissionId}/approve`, { method: 'POST' })
   return res.json()

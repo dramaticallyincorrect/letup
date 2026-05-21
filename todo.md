@@ -6,7 +6,7 @@ a marketplace for user created app
 
 
 1. ~~change title in long conversation lags~~
-2. submissions called multiple times
+2. ~~submissions called multiple times~~
 3. logo
 4. google sign in prod access
    1. check and verify logo , https://console.cloud.google.com/auth/branding?project=letup1
