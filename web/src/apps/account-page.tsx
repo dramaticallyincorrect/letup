@@ -141,7 +141,7 @@ export function AccountPage() {
               <div className="flex flex-col gap-2 pt-2">
                 {plan === 'free' ? (
                   <Button asChild>
-                    <Link to="/payment">
+                    <Link to="/payment" search={{ billing: 'annual' }}>
                       <SparklesIcon className="size-4" /> Upgrade to Pro
                     </Link>
                   </Button>
