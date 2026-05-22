@@ -1308,11 +1308,11 @@ function buildApp(fastify: Fastify) {
 
     try {
 
-      const planningModel = modelOverride  == 'deepseek-v4-flash' ? 'deepseek-v4-flash' : 'claude-opus-4-7'
+      const planningModel = 'deepseek-v4-flash'
 
 
       const sharedAgentParams = {
-        ...(modelOverride ? { model: modelOverride as Parameters<typeof runAgentLoop>[0]['model'] } : {}),
+        model: 'deepseek-v4-flash',
         signal: ac.signal,
         onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
         onText: (delta: string) => sendEvent('text', { text: delta }),
