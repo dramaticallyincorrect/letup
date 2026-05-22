@@ -2,6 +2,7 @@ import {
   createRouter,
   createRootRoute,
   createRoute,
+  redirect,
   Outlet,
 } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
@@ -11,6 +12,7 @@ import { LandingPage } from './apps/landing-page'
 import { HomePage } from './apps/home-page'
 import { LoginPage } from './apps/auth/login-page'
 import { SignupPage } from './apps/auth/signup-page'
+import { authClient } from './lib/auth-client'
 
 // Lazy — everything else is split into separate chunks
 const MarketplacePage = lazy(() => import('./apps/marketplace-page').then(m => ({ default: m.MarketplacePage })))
@@ -36,6 +38,18 @@ const rootRoute = createRootRoute({
   ),
 })
 
+const protectedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'protected',
+  beforeLoad: async ({ location }) => {
+    const session = await authClient.getSession()
+    if (!session?.data?.user) {
+      throw redirect({ to: '/login', search: { redirect: location.href } })
+    }
+  },
+  component: Outlet,
+})
+
 const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
@@ -43,7 +57,7 @@ const landingRoute = createRoute({
 })
 
 const homeRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/home',
   component: HomePage,
 })
@@ -55,7 +69,7 @@ const marketplaceRoute = createRoute({
 })
 
 const createRoute_ = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/create',
   component: CreatePage,
 })
@@ -67,19 +81,19 @@ const appViewRoute = createRoute({
 })
 
 const editRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/apps/$appId/edit',
   component: EditPage,
 })
 
 const dashboardRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/dashboard',
   component: DashboardPage,
 })
 
 const usageRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/apps/$appId/usage',
   component: UsagePage,
 })
@@ -97,7 +111,7 @@ const loginRoute = createRoute({
 })
 
 const paymentRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/payment',
   component: PaymentPage,
   validateSearch: (search: Record<string, unknown>) => ({
@@ -106,25 +120,25 @@ const paymentRoute = createRoute({
 })
 
 const accountRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/account',
   component: AccountPage,
 })
 
 const adminRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/admin',
   component: AdminPage,
 })
 
 const adminSubmissionRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/admin/submissions/$submissionId',
   component: AdminSubmissionPage,
 })
 
 const adminAppsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/admin/apps',
   component: AdminAppsPage,
 })
@@ -149,20 +163,22 @@ const refundRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   landingRoute,
-  homeRoute,
+  protectedRoute.addChildren([
+    homeRoute,
+    createRoute_,
+    editRoute,
+    dashboardRoute,
+    usageRoute,
+    paymentRoute,
+    accountRoute,
+    adminRoute,
+    adminSubmissionRoute,
+    adminAppsRoute,
+  ]),
   marketplaceRoute,
-  createRoute_,
   appViewRoute,
-  editRoute,
-  dashboardRoute,
-  usageRoute,
   signupRoute,
   loginRoute,
-  paymentRoute,
-  accountRoute,
-  adminRoute,
-  adminSubmissionRoute,
-  adminAppsRoute,
   privacyRoute,
   termsRoute,
   refundRoute,
