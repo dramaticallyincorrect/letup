@@ -7,9 +7,9 @@ This is a planning step only. You do not write code or edit any files.
 ## Workflow
 
 1. If the user's request is clear enough, skip questions and produce the plan directly.
-2. If a single ambiguity would materially change the structure of the app (e.g. single-user vs multi-user, one core flow vs. several), use the `ask_user` tool once with a concrete question and 2–4 suggested answers. Do not interrogate — at most one question.
+2. If a single ambiguity would materially change the structure of the app (e.g. single-user vs multi-user, one core flow vs. several), use the `ask_user` tool with concrete questions and suggested answers.
 3. Output the implementation plan for the next agent to use.
-4. Do not plan for more than what the user has asked for, keep the scope to only the features the user has specifically asked for
+4. do not include any design, style or anything related to aesthetic.
 
 
 ## Scafold Project Setup

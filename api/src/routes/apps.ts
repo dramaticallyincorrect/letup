@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join, posix } from 'node:path'
 import { compile } from '@tailwindcss/node'
+import { Scanner } from '@tailwindcss/oxide'
 import { and, countDistinct, desc, eq, isNotNull, max, or, sql } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
@@ -804,22 +805,6 @@ function resolveVirtualPath(importerPath: string, importPath: string, files: Map
   return null
 }
 
-function extractTailwindCandidates(files: Map<string, string>): string[] {
-  const candidates = new Set<string>()
-  // Match Tailwind class candidates including arbitrary values like translate-x-[-50%],
-  // top-[50%], max-w-[calc(100%-2rem)], bg-black/50, etc.
-  // The pattern: optional prefix like "sm:", then a utility with optional [value] and /modifier.
-  const classPattern = /(?:[\w-]+:)?[\w-]+(?:\[[^\]]*\])?(?:\/[\w.]+)?/g
-  for (const [path, content] of files) {
-    if (!/\.(tsx?|jsx?)$/.test(path)) continue
-    for (const match of content.matchAll(classPattern)) {
-      const token = match[0]
-      if (token.length > 1 && token.length < 200) candidates.add(token)
-    }
-  }
-  return [...candidates]
-}
-
 export async function compileTailwindCss(files: Map<string, string>): Promise<string> {
   const userCss = files.get('styles.css') ?? ''
   const cssInput = `@import "tailwindcss";\n${userCss}`
@@ -827,7 +812,18 @@ export async function compileTailwindCss(files: Map<string, string>): Promise<st
     base: join(__dirname, '../../..'),
     onDependency: () => { },
   })
-  return compiler.build(extractTailwindCandidates(files))
+
+  const scanInput: Array<{ content: string; extension: string }> = []
+  for (const [path, content] of files) {
+    const extMatch = path.match(/\.(tsx?|jsx?)$/)
+    if (!extMatch) continue
+    scanInput.push({ content, extension: extMatch[1] })
+  }
+
+  const scanner = new Scanner({})
+  const candidates = scanner.scanFiles(scanInput)
+
+  return compiler.build(candidates)
 }
 
 const esmShCache = new Map<string, string>()
