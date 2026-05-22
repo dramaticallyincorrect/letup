@@ -43,7 +43,7 @@ export function SignupPage() {
   }
 
   async function handleGoogle() {
-    await signIn.social({ provider: 'google', callbackURL: next })
+    await signIn.social({ provider: 'google', callbackURL: `${window.location.origin}${next}` })
   }
 
   return (
