@@ -1146,7 +1146,7 @@ function buildApp(fastify: Fastify) {
 
     if (modelOverride) {
       const allowed = ['claude-opus-4-7', 'claude-sonnet-4-6']
-      if (process.env.NODE_ENV !== 'production') allowed.push('deepseek-v4-flash')
+      if (process.env.NODE_ENV !== 'production' || request.isAdmin()) allowed.push('deepseek-v4-flash')
       if (!allowed.includes(modelOverride)) {
         return reply.code(400).send({ error: 'Invalid model specified' })
       }

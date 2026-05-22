@@ -44,7 +44,7 @@ const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'protected',
   beforeLoad: async ({ location }) => {
-    const session = await authClient.getSession()
+    const session = await authClient.getSession().catch(() => null)
     if (!session?.data?.user) {
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }

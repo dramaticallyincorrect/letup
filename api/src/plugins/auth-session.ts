@@ -8,6 +8,7 @@ declare module 'fastify' {
         userEmail: string | null
         assertAuthenticated(): string
         assertAdmin(): string
+        isAdmin(): boolean
     }
 }
 
@@ -23,6 +24,13 @@ export default fp(async (fastify) => {
         const adminEmail = process.env.ADMIN_EMAIL
         if (!adminEmail || this.userEmail !== adminEmail) throw fastify.httpErrors.forbidden('Admin access required')
         return this.userId as string
+    })
+
+    fastify.decorateRequest('isAdmin', function (this: any) {
+        if (!this.userId) throw fastify.httpErrors.unauthorized('Authentication required')
+        const adminEmail = process.env.ADMIN_EMAIL
+        
+        return !adminEmail || this.userEmail !== adminEmail
     })
 
     fastify.addHook('preHandler', async (request) => {
