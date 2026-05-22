@@ -1306,7 +1306,7 @@ function buildApp(fastify: Fastify) {
 
     try {
 
-      const planningModel = 'deepseek-v4-flash'
+      const planningModel = 'claude-opus-4-7'
 
 
       const sharedAgentParams = {
