@@ -9,7 +9,7 @@ import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function UsagePage() {
-  const { appId } = useParams({ from: '/apps/$appId/usage' })
+  const { appId } = useParams({ from: '/protected/apps/$appId/usage' })
   const navigate = useNavigate()
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
 

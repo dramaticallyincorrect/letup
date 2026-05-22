@@ -6,15 +6,22 @@ a marketplace for user created app
 
 
 3. logo
-4. google sign in prod access
+4. separate message history from conversation view
+5. points of optimization
+   1. store files in github instead of database
+   2. save ai usage logs to analytics instead of postgres?
+6. backup setup
+   1. postgres
+   2. litestream
+7. google sign in prod access
    1. check and verify logo , https://console.cloud.google.com/auth/branding?project=letup1
-9.  analytics
+8.  analytics
     1. app opened
        1. app id
        2. creator or not
-11. add screen shot of my apps to landing page
-12. make sure data is backed up by hetzner
-13. go through the core workflows and review the code
+9.  add screen shot of my apps to landing page
+10. make sure data is backed up by hetzner
+11. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place

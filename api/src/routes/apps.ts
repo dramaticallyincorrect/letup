@@ -200,7 +200,6 @@ function loadScaffoldFiles(): Promise<Map<string, string>> {
           console.warn(`[scaffold] failed to load shadcn component "${name}":`, err)
         }
       }))
-      console.log(`[scaffold] loaded ${files.size} default component files`)
       files.set('index.tsx',
         `
 import React from 'react';
@@ -1309,7 +1308,7 @@ function buildApp(fastify: Fastify) {
 
     try {
 
-      const planningModel = 'claude-opus-4-7'
+      const planningModel = modelOverride  == 'deepseek-v4-flash' ? 'deepseek-v4-flash' : 'claude-opus-4-7'
 
 
       const sharedAgentParams = {
@@ -1458,7 +1457,7 @@ function buildApp(fastify: Fastify) {
           }
           const retryMsgs = freshCacheable(result)
           retryMsgs.push({ role: 'user', content: `Compilation failed:\n\n${compileResult.error}\n\nPlease fix the issue.` })
-          console.log(`Compile failed (attempt ${attempt + 1}/${MAX_COMPILE_RETRIES}), retrying agent loop with updated messages...`)
+          fastify.log.info(`Compile failed (attempt ${attempt + 1}/${MAX_COMPILE_RETRIES}), retrying agent loop with updated messages...`)
           result = await runAgentLoop({ messages: retryMsgs, ...buildLoopParams, effort: 'medium' })
         }
         return result

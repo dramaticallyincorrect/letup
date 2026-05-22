@@ -15,7 +15,7 @@ const PRO_FEATURES_TAIL = [
 export function PaymentPage() {
   const navigate = useNavigate()
   const { data: session, isPending } = useSession()
-  const { billing } = useSearch({ from: '/payment' })
+  const { billing } = useSearch({ from: '/protected/payment' })
   const paddleRef = useRef<Paddle | null>(null)
   const openedRef = useRef(false)
   const [error, setError] = useState<string | null>(null)

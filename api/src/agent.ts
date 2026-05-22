@@ -104,14 +104,11 @@ export async function runAgentLoop(params: {
     } as Anthropic.Tool
   }
 
-  console.log(`[agent] starting loop — model=${model} tools=[${tools.map(t => t.name).join(',')}]`)
-
   let continueLoop = true
   let iteration = 0
   while (continueLoop) {
     throwIfAborted()
     iteration++
-    console.log(`[agent] iteration ${iteration} — sending request`)
 
     const baseParams = {
       model,
@@ -138,15 +135,7 @@ export async function runAgentLoop(params: {
     else signal?.addEventListener('abort', onAbort, { once: true })
 
     const toolUseBlocks = new Map<number, { id: string; name: string; inputJson: string }>()
-
-    let firstMessage = false
-    for await (const event of stream) {
-      if (!firstMessage) {
-        const durationSeconds = (Date.now() - iterStart) / 1000
-        console.log(`[agent] received first message for iteration ${iteration} after ${durationSeconds}s, model is responding... ${event}`)
-        firstMessage = true
-      }
-      firstMessage = true
+    for await (const event of stream) {      
       if (event.type === 'content_block_start') {
         const type = event.content_block.type
         if (type === 'tool_use') {
@@ -161,7 +150,6 @@ export async function runAgentLoop(params: {
           onText?.(event.delta.text)
         } else if (event.delta.type === 'thinking_delta') {
           onThinking?.(event.delta.thinking)
-          console.log(`[agent] received thinking delta for iteration ${iteration}: ${event.delta.thinking}`)
         } else if (event.delta.type === 'input_json_delta') {
           const block = toolUseBlocks.get(event.index)
           if (block) block.inputJson += event.delta.partial_json
@@ -172,11 +160,9 @@ export async function runAgentLoop(params: {
     const finalMessage = await stream.finalMessage()
     signal?.removeEventListener('abort', onAbort)
     const durationSeconds = (Date.now() - iterStart) / 1000
-    console.log(`[agent] iteration ${iteration} done — stop_reason=${finalMessage.stop_reason} local_tool_calls=${toolUseBlocks.size} duration=${durationSeconds}s`)
     await onUsage?.(finalMessage.usage, model, durationSeconds)
 
     if (finalMessage.stop_reason === 'max_tokens') {
-      console.log(`[agent] reached max tokens for iteration ${iteration}, forcing stop and tool execution if needed`)
       messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
       messages.push({ role: 'user', content: [{ type: 'text', text: 'You reached the maximum number of tokens, stop thinking and start the implementation' }] })
       continue;
@@ -194,7 +180,6 @@ export async function runAgentLoop(params: {
           if (toolDef) {
             onToolCall?.(block.name, input, null)
             result = await toolDef.handler(input)
-            console.log(`[agent]   executed tool handler for: ${block.name}`)
           } else {
             result = { error: `Unknown tool: ${block.name}, availble tools are ${sdkTools.map((t) => t.name + ' ,')}` }
           }
@@ -213,8 +198,5 @@ export async function runAgentLoop(params: {
       continueLoop = false
     }
   }
-
-  console.log(`[agent] loop complete after ${iteration} iteration(s)`)
-
   return messages
 }

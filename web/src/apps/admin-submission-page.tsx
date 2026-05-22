@@ -8,7 +8,7 @@ import { ArrowLeftIcon, FileIcon, MessageSquareIcon, BotIcon, HelpCircleIcon } f
 import { cn } from '@/lib/utils'
 
 export function AdminSubmissionPage() {
-  const { submissionId } = useParams({ from: '/admin/submissions/$submissionId' })
+  const { submissionId } = useParams({ from: '/protected/admin/submissions/$submissionId' })
   const navigate = useNavigate()
 
   const { data: user, isPending: userPending } = useQuery({

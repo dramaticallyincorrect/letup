@@ -52,7 +52,7 @@ function historyToChatMessages(history: unknown[]): ChatMessage[] {
 }
 
 export function EditPage() {
-  const { appId } = useParams({ from: '/apps/$appId/edit' })
+  const { appId } = useParams({ from: '/protected/apps/$appId/edit' })
 
   const { data: app, isError } = useQuery({
     queryKey: ['edit-app', appId],
