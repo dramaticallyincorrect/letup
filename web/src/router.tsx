@@ -12,6 +12,7 @@ import { LandingPage } from './apps/landing-page'
 import { HomePage } from './apps/home-page'
 import { LoginPage } from './apps/auth/login-page'
 import { SignupPage } from './apps/auth/signup-page'
+import { NotFoundPage } from './apps/not-found-page'
 import { authClient } from './lib/auth-client'
 
 // Lazy — everything else is split into separate chunks
@@ -36,6 +37,7 @@ const rootRoute = createRootRoute({
       <Outlet />
     </Suspense>
   ),
+  notFoundComponent: NotFoundPage,
 })
 
 const protectedRoute = createRoute({
