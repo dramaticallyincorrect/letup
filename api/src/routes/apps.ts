@@ -808,7 +808,7 @@ export async function compileTailwindCss(files: Map<string, string>): Promise<st
   const userCss = files.get('styles.css') ?? ''
   const cssInput = `@import "tailwindcss";\n${userCss}`
   const compiler = await compile(cssInput, {
-    base: join(__dirname, '../../..'),
+    base: join(__dirname, '../..'),
     onDependency: () => { },
   })
 
