@@ -11,7 +11,7 @@ import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
 import { openDb, openDraftDb, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
-import { runAgentLoop, cached, markLastTurnCacheable } from '../agent'
+import { runAgentLoop, cached, markLastTurnCacheable, clientFor, PauseForQuestionError } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microUnitsToCredits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
 import { VirtualFS } from '../virtual-fs/virtual-fs'
@@ -19,7 +19,7 @@ import { VirtualFS } from '../virtual-fs/virtual-fs'
 type DisplayMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string }
-  | { role: 'question'; questionId: string; question: string; suggestions: string[]; answer?: string }
+  | { role: 'question'; questionId: string; question: string; suggestions: string[]; answer?: string; buildPhase?: 'planning1' | 'planning2' | 'build' }
 
 function lastAssistantText(msgs: Anthropic.MessageParam[]): string {
   for (let i = msgs.length - 1; i >= 0; i--) {
@@ -42,9 +42,6 @@ function lastAssistantText(msgs: Anthropic.MessageParam[]): string {
 const PRODUCT_PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-product-plan.md'), 'utf8'))
 const PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
 const BUILD_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-build.md'), 'utf8'))
-
-// Deferred promises waiting for user answers, keyed by question ID
-const pendingQuestions = new Map<string, (answer: string) => void>()
 
 // Deferred promises waiting for frontend runtime verification results, keyed by check ID
 const pendingRuntimeChecks = new Map<string, (result: { ok: boolean; error?: string }) => void>()
@@ -251,7 +248,6 @@ const appsPlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   uninstallApp(fastify)
   deleteDraftApp(fastify)
   buildApp(fastify)
-  answerAppQuestion(fastify)
   runtimeResult(fastify)
   queryAppDb(fastify)
   appManifest(fastify)
@@ -1205,7 +1201,6 @@ function buildApp(fastify: Fastify) {
     const buildSessionId = randomUUID()
 
     const ac = new AbortController()
-    const sessionQuestionIds = new Set<string>()
 
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
@@ -1229,15 +1224,45 @@ function buildApp(fastify: Fastify) {
 
 
     const history = (Array.isArray(app.conversationHistory) ? app.conversationHistory : []) as Anthropic.MessageParam[]
+    const storedDisplay = Array.isArray(app.displayHistory) ? (app.displayHistory as DisplayMessage[]) : []
+
+    // Detect resume: last displayHistory question is unanswered AND conversationHistory ends
+    // with an assistant message containing an ask_user tool_use block.
+    const pendingQuestion = [...storedDisplay].reverse().find(m => m.role === 'question' && !m.answer) as
+      | (DisplayMessage & { role: 'question' }) | undefined
+    const lastHistoryMsg = history[history.length - 1]
+    const askUserBlock = pendingQuestion && lastHistoryMsg?.role === 'assistant'
+      ? (lastHistoryMsg.content as Anthropic.ContentBlock[]).find(
+          b => b.type === 'tool_use' && (b as Anthropic.ToolUseBlock).name === 'ask_user'
+        ) as Anthropic.ToolUseBlock | undefined
+      : undefined
+    const isResume = !!(pendingQuestion && askUserBlock)
+
     const isRefinement = history.length > 0
     // Cache the prior conversation so re-sent history is not re-billed on refinement.
     const cachedHistory = isRefinement ? markLastTurnCacheable(history) : history
-    const messages: Anthropic.MessageParam[] = [...cachedHistory, { role: 'user', content: userMessage }]
 
-    // Display history — tracks user-facing messages independently of the AI message format.
-    const storedDisplay = Array.isArray(app.displayHistory) ? (app.displayHistory as DisplayMessage[]) : []
-    let displayMsgs: DisplayMessage[] = isRefinement ? [...storedDisplay] : []
-    displayMsgs.push({ role: 'user', content: userMessage })
+    let displayMsgs: DisplayMessage[]
+    let messages: Anthropic.MessageParam[]
+
+    if (isResume) {
+      // Resume: userMessage is the answer. Update displayHistory and inject the tool_result.
+      displayMsgs = storedDisplay.map(m =>
+        m.role === 'question' && m.questionId === pendingQuestion.questionId ? { ...m, answer: userMessage } : m
+      )
+      displayMsgs.push({ role: 'user', content: userMessage })
+      messages = [
+        ...markLastTurnCacheable(history),
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: askUserBlock!.id, content: JSON.stringify({ answer: userMessage }) }],
+        },
+      ]
+    } else {
+      messages = [...cachedHistory, { role: 'user', content: userMessage }]
+      displayMsgs = isRefinement ? [...storedDisplay] : []
+      displayMsgs.push({ role: 'user', content: userMessage })
+    }
 
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
       let cssCode: string | null
@@ -1289,6 +1314,9 @@ function buildApp(fastify: Fastify) {
       }, 500)
     }
 
+    // Tracks which phase is currently running so paused questions know where to resume.
+    let currentPhase: 'planning1' | 'planning2' | 'build' = 'planning1'
+
     const askUserTool = {
       name: 'ask_user',
       description: 'ask the user a question either for clarification or information needed to complete the task',
@@ -1306,27 +1334,11 @@ function buildApp(fastify: Fastify) {
       },
       handler: async (input: Record<string, unknown>) => {
         const questionId = crypto.randomUUID()
-        sessionQuestionIds.add(questionId)
-        const answer = await new Promise<string>((resolve, reject) => {
-          pendingQuestions.set(questionId, resolve)
-          const onAbort = () => {
-            pendingQuestions.delete(questionId)
-            reject(ac.signal.reason ?? new DOMException('Aborted', 'AbortError'))
-          }
-          if (ac.signal.aborted) return onAbort()
-          ac.signal.addEventListener('abort', onAbort, { once: true })
-          const suggestions = (input.suggestions as string[] | undefined) ?? []
-          sendEvent('user_question', {
-            questionId,
-            question: input.question as string,
-            suggestions,
-          })
-          displayMsgs.push({ role: 'question', questionId, question: input.question as string, suggestions, answer: undefined })
-        })
-        displayMsgs = displayMsgs.map(m =>
-          m.role === 'question' && m.questionId === questionId ? { ...m, answer } : m
-        )
-        return { answer }
+        const question = input.question as string
+        const suggestions = (input.suggestions as string[] | undefined) ?? []
+        displayMsgs.push({ role: 'question', questionId, question, suggestions, answer: undefined, buildPhase: currentPhase })
+        sendEvent('user_question', { questionId, question, suggestions })
+        throw new PauseForQuestionError(questionId)
       },
     }
 
@@ -1342,6 +1354,9 @@ function buildApp(fastify: Fastify) {
     }
 
     let buildMessages: Anthropic.MessageParam[] = messages
+    // liveMessages always points to the array currently being mutated by the running runAgentLoop call,
+    // so the catch block can save the right state when PauseForQuestionError is thrown.
+    let liveMessages: Anthropic.MessageParam[] = messages
 
     try {
 
@@ -1431,29 +1446,100 @@ function buildApp(fastify: Fastify) {
       // Planning phases are internal — don't stream text/thinking to the client.
       const silentAgentParams = { ...sharedAgentParams, onThinking: () => {}, onText: () => {}, onToolCall: () => {} }
 
-      if (!isRefinement) {
-        sendEvent('text', {text: 'Gathering Scope Information\n'} )
+      const resumePhase = isResume ? (pendingQuestion?.buildPhase ?? 'build') : null
+
+      if (!isRefinement || resumePhase === 'planning1') {
+        if (!isRefinement) {
+          // Fire-and-forget: generate a short app description from the user's first message.
+          clientFor('deepseek-v4-flash').messages.create({
+            model: 'deepseek-v4-flash',
+            max_tokens: 80,
+            messages: [{
+              role: 'user',
+              content: `Write a single short sentence describing this app: "${userMessage}". Reply with just the sentence, no quotes or extra text.`,
+            }],
+          }).then(async res => {
+            const text = res.content[0]?.type === 'text' ? res.content[0].text.trim() : ''
+            if (text) await fastify.db.update(apps).set({ description: text }).where(eq(apps.id, appId))
+              if (text) sendEvent('text', { text: 'Building ' + text })
+          }).catch(e => fastify.log.warn(e, 'failed to generate app description'))
+        }
+
+        if (resumePhase === 'planning1') {
+          // Resume inside planning phase 1: messages already has the tool_result injected
+          currentPhase = 'planning1'
+          liveMessages = messages
+          buildMessages = await runAgentLoop({
+            effort: 'medium',
+            messages,
+            tools: [
+              askUserTool,
+              appFs.readFileTool,
+              appFs.readFileRangeTool,
+              appFs.grepFileTool,
+              appFs.searchFilesTool,
+              appFs.listFilesTool,
+            ],
+            system: PRODUCT_PLAN_SYSTEM,
+            ...silentAgentParams,
+            model: planningModel,
+          })
+        } else {
+          // Fresh build: start planning phase 1 from scratch
+          sendEvent('text', {text: 'Gathering Scope Information\n'} )
+          const phase1Msgs: Anthropic.MessageParam[] = [{ role: 'user', content: 'create an implementation plan for this user request\n' + userMessage }]
+          currentPhase = 'planning1'
+          liveMessages = phase1Msgs
+          buildMessages = await runAgentLoop({
+            effort: 'medium',
+            messages: phase1Msgs,
+            tools: [
+              askUserTool,
+              appFs.readFileTool,
+              appFs.readFileRangeTool,
+              appFs.grepFileTool,
+              appFs.searchFilesTool,
+              appFs.listFilesTool,
+            ],
+            system: PRODUCT_PLAN_SYSTEM,
+            ...silentAgentParams,
+            model: planningModel,
+          })
+        }
+
+        await saveProgress(buildMessages, displayMsgs)
+
+        // Fall through to planning phase 2
+        sendEvent('text', {text: 'Choosing the style direction\n'} )
+        const phase2Msgs: Anthropic.MessageParam[] = [...buildMessages, { role: 'user', content: 'now implement the design system. here is the content of the styles.css, use the write_file tool to completly replace it with the new design' + '\n\n' + (appFs.files.get('styles.css') ?? '') }]
+        currentPhase = 'planning2'
+        liveMessages = phase2Msgs
         buildMessages = await runAgentLoop({
           effort: 'medium',
-          messages: [{ role: 'user', content: 'create an implementation plan for this user request\n' + userMessage }],
+          messages: phase2Msgs,
           tools: [
             askUserTool,
+            appFs.strReplaceTool,
+            appFs.writeFileTool,
             appFs.readFileTool,
             appFs.readFileRangeTool,
             appFs.grepFileTool,
             appFs.searchFilesTool,
             appFs.listFilesTool,
           ],
-          system: PRODUCT_PLAN_SYSTEM,
+          system: PLAN_SYSTEM,
           ...silentAgentParams,
           model: planningModel,
         })
 
         await saveProgress(buildMessages, displayMsgs)
-        sendEvent('text', {text: 'Choosing the style direction\n'} )
+      } else if (resumePhase === 'planning2') {
+        // Resume inside planning phase 2: messages already has the tool_result injected
+        currentPhase = 'planning2'
+        liveMessages = messages
         buildMessages = await runAgentLoop({
           effort: 'medium',
-          messages: [...buildMessages, { role: 'user', content: 'now implement the design system. here is the content of the styles.css, use the write_file tool to completly replace it with the new design' + '\n\n' + (appFs.files.get('styles.css') ?? '') }],
+          messages,
           tools: [
             askUserTool,
             appFs.strReplaceTool,
@@ -1481,6 +1567,8 @@ function buildApp(fastify: Fastify) {
       }
 
       async function runBuildWithRetry(msgs: Anthropic.MessageParam[]): Promise<Anthropic.MessageParam[]> {
+        currentPhase = 'build'
+        liveMessages = msgs
         let result = await runAgentLoop({ messages: msgs, ...buildLoopParams, effort: 'medium' })
         const MAX_COMPILE_RETRIES = 2
         for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
@@ -1498,12 +1586,17 @@ function buildApp(fastify: Fastify) {
           const retryMsgs = freshCacheable(result)
           retryMsgs.push({ role: 'user', content: `Compilation failed:\n\n${compileResult.error}\n\nPlease fix the issue.` })
           fastify.log.info(`Compile failed (attempt ${attempt + 1}/${MAX_COMPILE_RETRIES}), retrying agent loop with updated messages...`)
+          currentPhase = 'build'
+          liveMessages = retryMsgs
           result = await runAgentLoop({ messages: retryMsgs, ...buildLoopParams, effort: 'medium' })
         }
         return result
       }
 
-      allMessages = await runBuildWithRetry([...markLastTurnCacheable(buildMessages), { role: 'user', content: 'execute the implementation plan' }])
+      const buildStartMsgs: Anthropic.MessageParam[] = isResume && resumePhase === 'build'
+        ? messages  // already has the tool_result injected
+        : [...markLastTurnCacheable(buildMessages), { role: 'user' as const, content: 'execute the implementation plan' }]
+      allMessages = await runBuildWithRetry(buildStartMsgs)
 
       const buildText = lastAssistantText(allMessages)
       if (buildText) displayMsgs.push({ role: 'assistant', content: buildText })
@@ -1555,10 +1648,17 @@ function buildApp(fastify: Fastify) {
         }
       }
     } catch (err) {
+      if (err instanceof PauseForQuestionError) {
+        // Save FIRST so a page reload after this point shows the question.
+        // liveMessages already has the assistant turn with the ask_user tool_use block.
+        try { await saveProgress(liveMessages, displayMsgs) } catch (e) { fastify.log.warn(e, 'failed to save progress on pause') }
+        sendEvent('paused', { questionId: err.questionId })
+        if (!reply.raw.writableEnded) reply.raw.end()
+        return
+      }
       compileAndPersist().catch(e => fastify.log.warn(e, 'failed to save progress after error'))
       const isAbort = ac.signal.aborted || (err instanceof Error && err.name === 'AbortError')
       if (isAbort) {
-        for (const qid of sessionQuestionIds) pendingQuestions.delete(qid)
         // No session-scoped tracking for runtime checks — they live only for the
         // duration of a single Promise resolved by /apps/build/runtime-result or
         // by the AbortSignal listener we register inline.
@@ -1648,30 +1748,6 @@ function queryAppDb(fastify: Fastify) {
   })
 }
 
-function answerAppQuestion(fastify: Fastify) {
-  fastify.post<{ Body: { questionId: string; answer: string } }>('/apps/answer', {
-    schema: {
-      tags: ['apps'],
-      summary: 'Submit a user answer to a pending ask_user question',
-      body: {
-        type: 'object',
-        properties: {
-          questionId: { type: 'string' },
-          answer: { type: 'string' },
-        },
-        required: ['questionId', 'answer'],
-      },
-    },
-  }, async (request, reply) => {
-    request.assertAuthenticated()
-    const { questionId, answer } = request.body
-    const resolve = pendingQuestions.get(questionId)
-    if (!resolve) return reply.code(404).send({ error: 'Question not found or already answered' })
-    pendingQuestions.delete(questionId)
-    resolve(answer)
-    return reply.send({ ok: true })
-  })
-}
 
 function runtimeResult(fastify: Fastify) {
   fastify.post<{ Body: { checkId: string; ok: boolean; error?: string } }>('/apps/build/runtime-result', {

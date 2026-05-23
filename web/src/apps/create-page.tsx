@@ -386,6 +386,9 @@ export function CreatePageInner({
               { role: 'question', questionId, question, suggestions: suggestions ?? [], answered: false },
             ]
           })
+        } else if (event === 'paused') {
+          // Build paused waiting for question answer. Stream will close naturally.
+          // isSending / currentActivity are cleaned up in the finally block below.
         } else if (event === 'runtime_check') {
           const { checkId } = data as { checkId: string; attempt: number; maxAttempts: number }
           if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current)
@@ -471,7 +474,7 @@ export function CreatePageInner({
             content: isAbort
               ? last.content || 'Build stopped.'
               : err instanceof Error ? err.message : 'Something went wrong',
-            streaming: false,
+            streaming: true,
           }
         }
         return next
@@ -531,14 +534,13 @@ export function CreatePageInner({
       delete next[questionId]
       return next
     })
-    setMessages(prev => [
-      ...prev.map(m =>
-        m.role === 'question' && m.questionId === questionId ? { ...m, answered: true } : m,
-      ),
-      { role: 'user' as const, content: answer },
-      { role: 'assistant' as const, content: '', streaming: true },
-    ])
-    await client.answerAppQuestion(questionId, answer)
+    // Mark the question answered in local state optimistically.
+    // handleSend will push the user + assistant messages.
+    setMessages(prev =>
+      prev.map(m => m.role === 'question' && m.questionId === questionId ? { ...m, answered: true } : m)
+    )
+    // The server detects the paused state and resumes the build with this answer.
+    await handleSend(answer)
   }
 
   async function handleSave() {

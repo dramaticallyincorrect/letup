@@ -2,12 +2,19 @@ import Anthropic from '@anthropic-ai/sdk'
 import { Model, OutputConfig } from '@anthropic-ai/sdk/resources'
 
 const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+export class PauseForQuestionError extends Error {
+  constructor(public readonly questionId: string) {
+    super('PauseForQuestion')
+    this.name = 'PauseForQuestionError'
+  }
+}
 const deepseekClient = new Anthropic({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: 'https://api.deepseek.com/anthropic',
 })
 
-function clientFor(model: string): Anthropic {
+export function clientFor(model: string): Anthropic {
   return model.startsWith('deepseek') ? deepseekClient : anthropicClient
 }
 

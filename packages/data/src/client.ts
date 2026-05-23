@@ -43,7 +43,7 @@ export type App = AppSummary & {
 export type DisplayMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string }
-  | { role: 'question'; questionId: string; question: string; suggestions: string[]; answer?: string }
+  | { role: 'question'; questionId: string; question: string; suggestions: string[]; answer?: string; buildPhase?: 'planning1' | 'planning2' | 'build' }
 
 export type AppDetail = App & {
   conversationHistory: unknown[]
@@ -148,13 +148,6 @@ export function buildApp(
   })
 }
 
-export async function answerAppQuestion(questionId: string, answer: string): Promise<void> {
-  await apiFetch('/apps/answer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ questionId, answer }),
-  })
-}
 
 export async function reportRuntimeResult(
   checkId: string,
