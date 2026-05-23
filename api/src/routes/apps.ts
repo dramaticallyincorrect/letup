@@ -16,6 +16,28 @@ import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microU
 import { Fastify } from '../fastify_type'
 import { VirtualFS } from '../virtual-fs/virtual-fs'
 
+type DisplayMessage =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string }
+  | { role: 'question'; questionId: string; question: string; suggestions: string[]; answer?: string }
+
+function lastAssistantText(msgs: Anthropic.MessageParam[]): string {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (m.role === 'assistant') {
+      if (typeof m.content === 'string') return m.content
+      if (Array.isArray(m.content)) {
+        return (m.content as Array<{ type: string; text?: string }>)
+          .filter(b => b.type === 'text')
+          .map(b => b.text ?? '')
+          .join('')
+      }
+    }
+  }
+  return ''
+}
+
+
 // System prompts — loaded once, wrapped with cache_control for prompt caching
 const PRODUCT_PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-product-plan.md'), 'utf8'))
 const PLAN_SYSTEM = cached(readFileSync(join(__dirname, '../prompts/app-plan.md'), 'utf8'))
@@ -1082,6 +1104,7 @@ const APP_VERSION_COLUMNS = {
   description: apps.description,
   latestVersionNumber: apps.latestVersionNumber,
   conversationHistory: apps.conversationHistory,
+  displayHistory: apps.displayHistory,
   createdAt: apps.createdAt,
   updatedAt: apps.updatedAt,
   versionNumber: appVersions.versionNumber,
@@ -1211,6 +1234,11 @@ function buildApp(fastify: Fastify) {
     const cachedHistory = isRefinement ? markLastTurnCacheable(history) : history
     const messages: Anthropic.MessageParam[] = [...cachedHistory, { role: 'user', content: userMessage }]
 
+    // Display history — tracks user-facing messages independently of the AI message format.
+    const storedDisplay = Array.isArray(app.displayHistory) ? (app.displayHistory as DisplayMessage[]) : []
+    let displayMsgs: DisplayMessage[] = isRefinement ? [...storedDisplay] : []
+    displayMsgs.push({ role: 'user', content: userMessage })
+
     async function compileAndPersist(): Promise<{ success: true } | { error: string }> {
       let cssCode: string | null
       try {
@@ -1287,20 +1315,29 @@ function buildApp(fastify: Fastify) {
           }
           if (ac.signal.aborted) return onAbort()
           ac.signal.addEventListener('abort', onAbort, { once: true })
+          const suggestions = (input.suggestions as string[] | undefined) ?? []
           sendEvent('user_question', {
             questionId,
             question: input.question as string,
-            suggestions: (input.suggestions as string[] | undefined) ?? [],
+            suggestions,
           })
+          displayMsgs.push({ role: 'question', questionId, question: input.question as string, suggestions, answer: undefined })
         })
+        displayMsgs = displayMsgs.map(m =>
+          m.role === 'question' && m.questionId === questionId ? { ...m, answer } : m
+        )
         return { answer }
       },
     }
 
-    async function saveProgress(msgs: Anthropic.MessageParam[]) {
+    async function saveProgress(msgs: Anthropic.MessageParam[], display: DisplayMessage[]) {
       await fastify.db
         .update(apps)
-        .set({ conversationHistory: stripCacheControl(msgs) as unknown[], updatedAt: new Date() })
+        .set({
+          conversationHistory: stripCacheControl(msgs) as unknown[],
+          displayHistory: display as unknown[],
+          updatedAt: new Date(),
+        })
         .where(eq(apps.id, appId))
     }
 
@@ -1365,7 +1402,6 @@ function buildApp(fastify: Fastify) {
           await fastify.db.update(apps).set({ updatedAt: new Date() }).where(eq(apps.id, appId))
           const draft = openDraftDb(appId)
           try { draft.exec(schemaSQL) } catch (error) {
-            console.error('Error occurred while executing schema SQL:', error)
             return { error: error instanceof Error ? error.message : 'Unknown error during database setup' }
           } finally {
             draft.close()
@@ -1392,7 +1428,11 @@ function buildApp(fastify: Fastify) {
 
 
 
+      // Planning phases are internal — don't stream text/thinking to the client.
+      const silentAgentParams = { ...sharedAgentParams, onThinking: () => {}, onText: () => {}, onToolCall: () => {} }
+
       if (!isRefinement) {
+        sendEvent('text', {text: 'Gathering Scope Information\n'} )
         buildMessages = await runAgentLoop({
           effort: 'medium',
           messages: [{ role: 'user', content: 'create an implementation plan for this user request\n' + userMessage }],
@@ -1405,12 +1445,12 @@ function buildApp(fastify: Fastify) {
             appFs.listFilesTool,
           ],
           system: PRODUCT_PLAN_SYSTEM,
-          ...sharedAgentParams,
+          ...silentAgentParams,
           model: planningModel,
         })
 
-
-        await saveProgress(buildMessages)
+        await saveProgress(buildMessages, displayMsgs)
+        sendEvent('text', {text: 'Choosing the style direction\n'} )
         buildMessages = await runAgentLoop({
           effort: 'medium',
           messages: [...buildMessages, { role: 'user', content: 'now implement the design system. here is the content of the styles.css, use the write_file tool to completly replace it with the new design' + '\n\n' + (appFs.files.get('styles.css') ?? '') }],
@@ -1425,11 +1465,11 @@ function buildApp(fastify: Fastify) {
             appFs.listFilesTool,
           ],
           system: PLAN_SYSTEM,
-          ...sharedAgentParams,
+          ...silentAgentParams,
           model: planningModel,
         })
 
-        await saveProgress(buildMessages)
+        await saveProgress(buildMessages, displayMsgs)
       }
 
 
@@ -1465,7 +1505,9 @@ function buildApp(fastify: Fastify) {
 
       allMessages = await runBuildWithRetry([...markLastTurnCacheable(buildMessages), { role: 'user', content: 'execute the implementation plan' }])
 
-      await saveProgress(allMessages)
+      const buildText = lastAssistantText(allMessages)
+      if (buildText) displayMsgs.push({ role: 'assistant', content: buildText })
+      await saveProgress(allMessages, displayMsgs)
 
       if (appFs.files.size > 0) {
         const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
@@ -1507,7 +1549,7 @@ function buildApp(fastify: Fastify) {
           retryMsgs.push({ role: 'user', content: `Runtime error in preview:\n\n${result.error}\n\nPlease fix the issue.` })
           fastify.log.info({ appId, attempt: attempt + 1 }, 'runtime error reported, retrying agent loop')
           allMessages = await runBuildWithRetry(retryMsgs)
-          await saveProgress(allMessages)
+          await saveProgress(allMessages, displayMsgs)
           const refreshed = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
           sendEvent('widget', refreshed)
         }
@@ -1520,7 +1562,7 @@ function buildApp(fastify: Fastify) {
         // No session-scoped tracking for runtime checks — they live only for the
         // duration of a single Promise resolved by /apps/build/runtime-result or
         // by the AbortSignal listener we register inline.
-        try { await saveProgress(buildMessages) } catch (e) { fastify.log.warn(e, 'failed to save progress on cancel') }
+        try { await saveProgress(buildMessages, displayMsgs) } catch (e) { fastify.log.warn(e, 'failed to save progress on cancel') }
         if (!reply.raw.writableEnded) sendEvent('cancelled', {})
         fastify.log.info({ appId, buildSessionId }, 'app build cancelled by client')
       } else if (err instanceof InsufficientCreditsError) {

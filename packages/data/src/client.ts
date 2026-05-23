@@ -40,8 +40,14 @@ export type App = AppSummary & {
   cssCode: string | null
 }
 
+export type DisplayMessage =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string }
+  | { role: 'question'; questionId: string; question: string; suggestions: string[]; answer?: string }
+
 export type AppDetail = App & {
   conversationHistory: unknown[]
+  displayHistory: DisplayMessage[]
 }
 
 

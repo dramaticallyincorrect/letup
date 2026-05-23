@@ -36,32 +36,34 @@ a marketplace for user created app
 ## out of scope
 
 1. updates to the app with database change when submiting to marketplace
-2. plan when and how should apps be deleted, complete removal or always only marked as deleted
-3. share app data or component code with other apps
-4. canvas that can host multiple self contained components
+2. ultimate plan
+   1. proxy for circumventing cors
+3. plan when and how should apps be deleted, complete removal or always only marked as deleted
+4. share app data or component code with other apps
+5. canvas that can host multiple self contained components
    1. the main page be a editable canvas itself, with default apps like header
-5. shared (between users) database
-6. open apps side by side
-7. install created apps from dashboard
-8.  submit updates to marketplace
-9.  github to store versions
-10. official apps
-    10. builder
-    1.  include border and shadow in default styles.css
-    2.  give build tool
-    3.  try Todo tool
-    4.  try having db and ai module out of prompt and on demand
-    5.  https://gemini.google.com/app/f49e77135be7c241
-    6.  back to ask questions to clarify
-    7.  try one with plan + thinking and one without
-    8.  research context optimizations
-11. credit
+6. shared (between users) database
+7. open apps side by side
+8. install created apps from dashboard
+9.  submit updates to marketplace
+10. github to store versions
+11. official apps
+    1.  builder
+    2.  include border and shadow in default styles.css
+    3.  give build tool
+    4.  try Todo tool
+    5.  try having db and ai module out of prompt and on demand
+    6.  https://gemini.google.com/app/f49e77135be7c241
+    7.  back to ask questions to clarify
+    8.  try one with plan + thinking and one without
+    9.  research context optimizations
+12. credit
     1. credit top up
- 12. users choose the colors
+ 13. users choose the colors
      1.  use across apps option
- 13. collapse conversation, only show the model text output
- 14. play a small sound when build is done
- 15. empty view for my apps
+ 14. collapse conversation, only show the model text output
+ 15. play a small sound when build is done
+ 16. empty view for my apps
 
 
 

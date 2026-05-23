@@ -3,51 +3,18 @@ import { useQuery } from '@tanstack/react-query'
 import * as client from '@repo/data'
 import { CreatePageInner, type ChatMessage } from './create-page'
 
-const INTERNAL_USER_MESSAGES = new Set(['Now execute this plan and build the app.'])
-
-function historyToChatMessages(history: unknown[]): ChatMessage[] {
-  type Msg = { role: string; content: unknown }
-  type Block = { type: string; text?: string; thinking?: string }
-
+function displayToChat(display: client.DisplayMessage[]): ChatMessage[] {
   const result: ChatMessage[] = []
-  let pendingText = ''
-  let pendingThinking = ''
-
-  function flushAssistant() {
-    if (pendingText || pendingThinking) {
-      result.push({
-        role: 'assistant',
-        content: pendingText,
-        thinking: pendingThinking || undefined,
-        streaming: false,
-      })
-      pendingText = ''
-      pendingThinking = ''
+  for (const m of display) {
+    if (m.role === 'user') {
+      result.push(m)
+    } else if (m.role === 'assistant') {
+      result.push({ role: 'assistant', content: m.content, streaming: false })
+    } else if (m.role === 'question') {
+      result.push({ role: 'question', questionId: m.questionId, question: m.question, suggestions: m.suggestions, answered: m.answer !== undefined })
+      if (m.answer) result.push({ role: 'user', content: m.answer })
     }
   }
-
-  for (const msg of history as Msg[]) {
-    if (msg.role === 'user') {
-      if (typeof msg.content === 'string' && !INTERNAL_USER_MESSAGES.has(msg.content)) {
-        flushAssistant()
-        const match = msg.content.match(/User request:\s*([\s\S]+)$/)
-        const userText = match ? match[1].trim() : msg.content
-        result.push({ role: 'user', content: userText })
-      }
-      // Array content = tool_result messages, or internal trigger messages → skip
-    } else if (msg.role === 'assistant') {
-      if (Array.isArray(msg.content)) {
-        const blocks = msg.content as Block[]
-        pendingText += blocks.filter(b => b.type === 'text').map(b => b.text ?? '').join('')
-        pendingThinking += blocks.filter(b => b.type === 'thinking').map(b => b.thinking ?? '').join('')
-      } else if (typeof msg.content === 'string') {
-        pendingText += msg.content
-      }
-    }
-  }
-
-  flushAssistant()
-
   return result
 }
 
@@ -82,7 +49,7 @@ export function EditPage() {
       key={app.id}
       initialWidgetId={app.id}
       initialAppName={app.name}
-      initialMessages={historyToChatMessages(app.conversationHistory)}
+      initialMessages={displayToChat(app.displayHistory)}
       initialCompiledCode={app.compiledCode}
       initialCssCode={app.cssCode}
     />

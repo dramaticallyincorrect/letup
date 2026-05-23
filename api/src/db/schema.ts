@@ -11,6 +11,7 @@ export const apps = pgTable('apps', {
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
   conversationHistory: jsonb('conversation_history').notNull().default([]),
+  displayHistory: jsonb('display_history').notNull().default([]),
   latestVersionNumber: integer('latest_version_number').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
