@@ -506,6 +506,21 @@ function renderAppShell(opts: {
       window.addEventListener('unhandledrejection', function(e){
         try { parent.postMessage({ type: 'app-error', message: String(e.reason && e.reason.message || e.reason) }, '*'); } catch(_) {}
       });
+      // Intercept console.error to catch errors reported by framework error boundaries
+      // (e.g. React Router's default ErrorBoundary) that never reach window.error.
+      (function(){
+        var _ce = console.error;
+        console.error = function() {
+          _ce.apply(console, arguments);
+          var first = String(arguments[0] || '');
+          if (first.indexOf('Error handled by React Router') !== -1 || first.indexOf('React Router caught the following error') !== -1) {
+            var err = arguments[1];
+            var msg = (err && err.message) ? err.message : first;
+            var stack = (err && err.stack) ? err.stack : undefined;
+            try { parent.postMessage({ type: 'app-error', message: msg, stack: stack }, '*'); } catch(_) {}
+          }
+        };
+      })();
       // Intercept fetch responses to report HTTP errors from db/ai endpoints or
       // external APIs, but suppress failures from other platform endpoints.
       (function(){
@@ -713,7 +728,17 @@ function installApp(fastify: Fastify) {
       .where(eq(userSubscriptions.userId, userId))
       .limit(1)
 
-    if (!sub || sub.plan === 'free') {
+    // Check if the user already has any version of this app installed (i.e. this is an update, not a new install)
+    const existingInstall = await fastify.db
+      .select({ versionId: userAppInstalls.versionId })
+      .from(userAppInstalls)
+      .innerJoin(appVersions, eq(userAppInstalls.versionId, appVersions.id))
+      .where(and(eq(userAppInstalls.userId, userId), eq(appVersions.appId, appId)))
+      .limit(1)
+
+    const isUpdate = existingInstall.length > 0
+
+    if (!isUpdate && (!sub || sub.plan === 'free')) {
       const [{ count }] = await fastify.db
         .select({ count: countDistinct(appVersions.appId) })
         .from(userAppInstalls)
@@ -897,7 +922,14 @@ if (typeof window !== 'undefined' && window.location.pathname !== '/') {
 
 const container = document.getElementById('root');
 if (container) {
-  createRoot(container).render(React.createElement(App, { data: {} }));
+  createRoot(container, {
+    onCaughtError: function(error) {
+      try { parent.postMessage({ type: 'app-error', message: error && error.message || String(error), stack: error && error.stack }, '*'); } catch(_) {}
+    },
+    onUncaughtError: function(error) {
+      try { parent.postMessage({ type: 'app-error', message: error && error.message || String(error), stack: error && error.stack }, '*'); } catch(_) {}
+    },
+  }).render(React.createElement(App, { data: {} }));
 }
 `
 

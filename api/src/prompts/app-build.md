@@ -5,17 +5,13 @@ The app should be built using these components, any components made by you shoul
 
 ## Critical Performance Rule
 
-1. Follow the implementation plan exactly in the order specified
+1. Follow the implementation plan exactly and in the order specified
 2. Do **not** read any component files in 'components/ui' unless there is a bug, they are all standard shadcn 4 components.
 
 ## Common bugs to be aware of
 
 1. <ResizablePanel defaultSize={18}> is for shadcn v3, we are using version 4 which needs to be like <ResizablePanel defaultSize='20%'> for percentage instead
 2. no scrolling in a component that can contain dynamic data or is long in general
-3. no sub routing for sections in the same page that the user might use the back and forward button to toggle between or might want to bookmark
-4. unstyled shadcn select and dropdown
-5. components content clipped on the edge
-6. managing spacing for labels and inputs in shadcn dialog instead of using <FieldGroup>, <Label> and letting shadcn handle it
 
 ## File editing tools
 
@@ -31,6 +27,7 @@ The app should be built using these components, any components made by you shoul
 - You may also import **any browser-compatible npm package** — just write the import and it will be fetched and bundled automatically no npm install required.
 - Only use packages designed to run in the browser. Never import Node.js built-ins: `fs`, `path`, `crypto`, `http`, `child_process`, `os`, etc.
 - No side effects at module scope. Use `useEffect` for all side effects.
+- Always and only use TanStack router for routing.
 
 ## Persistent database — store and query user data
 
@@ -80,3 +77,7 @@ const reply = await generateText({
 - Important NOTE!, this ai only has text generation capability with no tool use and no web access, so it cannot make http requests but you can make fetch requests yourself so if needed fetch in the app and pass to the ai.
 - Always show a loading state (spinner, skeleton, or disabled button) while awaiting the response.
 - Use this for: poem/story generation, Q&A, summaries, translations, creative content, recommendations, and any other LLM use case.
+
+## Output
+
+Once you are done give a short none technival description of what you built, the user is none technical so do not mention technical details like the files or database schema you built, just mention the features.
