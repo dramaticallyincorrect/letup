@@ -1397,7 +1397,7 @@ function buildApp(fastify: Fastify) {
 
 
       const sharedAgentParams = {
-        model: 'deepseek-v4-flash',
+        model: modelOverride ?? planningModel,
         signal: ac.signal,
         onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
         onText: (delta: string) => sendEvent('text', { text: delta }),
