@@ -11,7 +11,7 @@ import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
 import { openDraftDb, openUserDb, copyDraftToUserDb, copyUserDbToDraft } from '../db/appDb'
-import { runAgentLoop, cached, markLastTurnCacheable, clientFor, PauseForQuestionError } from '../agent'
+import { runAgentLoop, cached, markLastTurnCacheable, PauseForQuestionError } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microUnitsToCredits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
 import { VirtualFS } from '../virtual-fs/virtual-fs'
@@ -1360,7 +1360,7 @@ function buildApp(fastify: Fastify) {
 
     try {
 
-      const planningModel = 'deepseek-v4-flash'
+      const planningModel = process.env.PLANNING_MODEL || 'claude-sonnet-4-6'
 
 
       const sharedAgentParams = {
@@ -1449,22 +1449,6 @@ function buildApp(fastify: Fastify) {
       const resumePhase = isResume ? (pendingQuestion?.buildPhase ?? 'build') : null
 
       if (!isRefinement || resumePhase === 'planning1') {
-        if (!isRefinement) {
-          // Fire-and-forget: generate a short app description from the user's first message.
-          clientFor('deepseek-v4-flash').messages.create({
-            model: 'deepseek-v4-flash',
-            max_tokens: 80,
-            messages: [{
-              role: 'user',
-              content: `Write a single short sentence describing this app: "${userMessage}". Reply with just the sentence, no quotes or extra text.`,
-            }],
-          }).then(async res => {
-            const text = res.content[0]?.type === 'text' ? res.content[0].text.trim() : ''
-            if (text) await fastify.db.update(apps).set({ description: text }).where(eq(apps.id, appId))
-              if (text) sendEvent('text', { text: 'Building ' + text })
-          }).catch(e => fastify.log.warn(e, 'failed to generate app description'))
-        }
-
         if (resumePhase === 'planning1') {
           // Resume inside planning phase 1: messages already has the tool_result injected
           currentPhase = 'planning1'
