@@ -88,14 +88,14 @@ function LandingNav() {
         WebkitBackdropFilter: 'blur(20px) saturate(130%)',
       }}
     >
-      <div className="max-w-6xl mx-auto h-15 px-10 flex items-center gap-1">
+      <div className="max-w-6xl mx-auto h-14 px-4 sm:px-10 flex items-center gap-1 min-w-0">
         {/* Brand */}
         <div
-          className="flex items-center gap-2 font-bold text-base tracking-tight mr-5"
+          className="flex items-center gap-2 font-bold text-base tracking-tight mr-2 sm:mr-5 shrink-0"
           style={{ color: CORAL.heroInk }}
         >
           <span
-            className="size-6.5 rounded-lg grid place-items-center text-sm font-bold text-white"
+            className="size-6.5 rounded-lg grid place-items-center text-sm font-bold text-white shrink-0"
             style={{ background: 'var(--accent)' }}
           >
             L
@@ -103,29 +103,31 @@ function LandingNav() {
           Letup
         </div>
 
-        {/* Nav links */}
-        {[
-          { label: 'Features', href: '#features' },
-          { label: 'Pricing', href: '#pricing' },
-          { label: 'App Store', href: '/marketplace' },
-        ].map(({ label, href }) => (
-          <a
-            key={label}
-            href={href}
-            className="font-semibold text-sm px-3 py-1.5 rounded-lg transition-colors no-underline"
-            style={{ color: CORAL.heroInk, opacity: 0.62 }}
-            onMouseEnter={e => {
-              e.currentTarget.style.opacity = '1'
-              e.currentTarget.style.background = 'rgba(128,128,128,0.09)'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.opacity = '0.62'
-              e.currentTarget.style.background = 'transparent'
-            }}
-          >
-            {label}
-          </a>
-        ))}
+        {/* Nav links — hidden on mobile */}
+        <div className="hidden sm:flex items-center gap-1">
+          {[
+            { label: 'Features', href: '#features' },
+            { label: 'Pricing', href: '#pricing' },
+            { label: 'App Store', href: '/marketplace' },
+          ].map(({ label, href }) => (
+            <a
+              key={label}
+              href={href}
+              className="font-semibold text-sm px-3 py-1.5 rounded-lg transition-colors no-underline"
+              style={{ color: CORAL.heroInk, opacity: 0.62 }}
+              onMouseEnter={e => {
+                e.currentTarget.style.opacity = '1'
+                e.currentTarget.style.background = 'rgba(128,128,128,0.09)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.opacity = '0.62'
+                e.currentTarget.style.background = 'transparent'
+              }}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
 
         <div className="flex-1" />
 
@@ -133,7 +135,7 @@ function LandingNav() {
         {isLoggedIn ? (
           <Link
             to="/home"
-            className="inline-flex items-center h-9 px-5 rounded-full font-bold text-sm no-underline transition-[filter]"
+            className="inline-flex items-center h-9 px-4 sm:px-5 rounded-full font-bold text-sm no-underline transition-[filter] shrink-0"
             style={{
               background: CORAL.ctaBg,
               color: CORAL.ctaColor,
@@ -148,7 +150,7 @@ function LandingNav() {
           <>
             <Link
               to="/login"
-              className="font-semibold text-sm no-underline px-3.5 py-2 rounded-lg mr-1 transition-opacity"
+              className="font-semibold text-sm no-underline px-3 py-2 rounded-lg mr-1 transition-opacity shrink-0"
               style={{ color: CORAL.heroInk, opacity: 0.7 }}
               onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
               onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
@@ -157,7 +159,7 @@ function LandingNav() {
             </Link>
             <Link
               to="/signup"
-              className="inline-flex items-center h-9 px-5 rounded-full font-bold text-sm no-underline transition-[filter]"
+              className="inline-flex items-center h-9 px-4 sm:px-5 rounded-full font-bold text-sm no-underline transition-[filter] shrink-0"
               style={{
                 background: CORAL.ctaBg,
                 color: CORAL.ctaColor,
@@ -182,7 +184,7 @@ function HeroSection() {
       style={{ background: CORAL.heroBg, minHeight: 'calc(100vh - var(--spacing) * 15)' }}
       id="features"
     >
-      <div className="max-w-4xl mx-auto px-10 py-18 flex flex-col items-center text-center gap-7 w-full relative">
+      <div className="max-w-4xl mx-auto px-4 sm:px-10 py-18 flex flex-col items-center text-center gap-7 w-full relative">
         <h1
           className="m-0 font-extrabold tracking-tighter leading-none text-balance"
           style={{
@@ -446,7 +448,7 @@ function PricingSection() {
   }
 
   return (
-    <section id="pricing" className="py-24 px-10 bg-background">
+    <section id="pricing" className="py-24 px-4 sm:px-10 bg-background">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-15">
           <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground m-0 mb-2.5">
@@ -460,29 +462,33 @@ function PricingSection() {
           </h2>
         </div>
 
-        <div className="flex gap-5 justify-center items-start max-w-4xl mx-auto pt-3.5 max-[880px]:flex-col max-[880px]:items-center">
-          <PricingCard
-            label="Free"
-            amount={freeDisplay}
-            period=""
-            tagline="Get started with no credit card required."
-            features={FREE_FEATURES}
-            ctaLabel="Sign up"
-          />
-          <PricingCard
-            label="Pro"
-            amount={monthlyDisplay}
-            period="/ month"
-            annualAmount={annualMonthlyDisplay}
-            annualBilledNote={annualBilledNote}
-            discountBadge={discountBadge}
-            tagline="get the most out of letup with pro features"
-            features={PRO_FEATURES_MONTHLY}
-            annualFeatures={PRO_FEATURES_ANNUAL}
-            featured
-            ctaLabel="Get Pro"
-            onCtaClick={goToCheckout}
-          />
+        <div className="flex gap-5 justify-center items-start max-w-4xl mx-auto pt-3.5 flex-col sm:flex-row sm:items-start items-stretch">
+          <div className="order-2 sm:order-1 flex flex-col flex-1 w-full">
+            <PricingCard
+              label="Free"
+              amount={freeDisplay}
+              period=""
+              tagline="Get started with no credit card required."
+              features={FREE_FEATURES}
+              ctaLabel="Sign up"
+            />
+          </div>
+          <div className="order-1 sm:order-2 flex flex-col flex-1 w-full">
+            <PricingCard
+              label="Pro"
+              amount={monthlyDisplay}
+              period="/ month"
+              annualAmount={annualMonthlyDisplay}
+              annualBilledNote={annualBilledNote}
+              discountBadge={discountBadge}
+              tagline="get the most out of letup with pro features"
+              features={PRO_FEATURES_MONTHLY}
+              annualFeatures={PRO_FEATURES_ANNUAL}
+              featured
+              ctaLabel="Get Pro"
+              onCtaClick={goToCheckout}
+            />
+          </div>
         </div>
       </div>
     </section>
@@ -491,8 +497,8 @@ function PricingSection() {
 
 function LandingFooter() {
   return (
-    <footer className="bg-secondary border-t border-border px-10 py-8">
-      <div className="max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-5">
+    <footer className="bg-secondary border-t border-border px-4 sm:px-10 py-8">
+      <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-2 font-bold text-foreground">
           <span
             className="size-5.5 rounded-sm grid place-items-center text-xs font-bold text-white"
@@ -502,7 +508,7 @@ function LandingFooter() {
           </span>
           Letup
         </div>
-        <div className="flex gap-6">
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           {([['Terms of Service', '/terms'], ['Privacy Policy', '/privacy'], ['Refund Policy', '/refund']] as const).map(([label, to]) => (
             <Link
               key={label}
