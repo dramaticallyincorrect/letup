@@ -1,7 +1,10 @@
+FROM litestream/litestream:latest AS litestream
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y python3 make g++ curl && rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm
+
+COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
 
 WORKDIR /app
 
@@ -31,6 +34,10 @@ RUN node -e "\
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/data/apps
 
+COPY api/litestream.yml /etc/litestream.yml
+COPY api/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 3000
 
-CMD sh -c "node /app/api/dist/migrate.js && node /app/api/dist/server.js"
+ENTRYPOINT ["/entrypoint.sh"]
