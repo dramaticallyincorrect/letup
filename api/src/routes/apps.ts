@@ -405,7 +405,9 @@ function createApp(fastify: Fastify) {
     await fastify.db
       .insert(appVersions)
       .values({ appId: app.id, versionNumber: 1, isDraft: true })
-    openDraftDb(app.id).close()
+
+    const userId = request.assertAuthenticated()
+    openDraftDb(app.id, userId).close()
     return reply.code(201).send(app)
   })
 }
@@ -1233,8 +1235,8 @@ function buildApp(fastify: Fastify) {
     const lastHistoryMsg = history[history.length - 1]
     const askUserBlock = pendingQuestion && lastHistoryMsg?.role === 'assistant'
       ? (lastHistoryMsg.content as Anthropic.ContentBlock[]).find(
-          b => b.type === 'tool_use' && (b as Anthropic.ToolUseBlock).name === 'ask_user'
-        ) as Anthropic.ToolUseBlock | undefined
+        b => b.type === 'tool_use' && (b as Anthropic.ToolUseBlock).name === 'ask_user'
+      ) as Anthropic.ToolUseBlock | undefined
       : undefined
     const isResume = !!(pendingQuestion && askUserBlock)
 
@@ -1415,7 +1417,7 @@ function buildApp(fastify: Fastify) {
               set: { dbSchema: schemaSQL, isDraft: true },
             })
           await fastify.db.update(apps).set({ updatedAt: new Date() }).where(eq(apps.id, appId))
-          const draft = openDraftDb(appId)
+          const draft = openDraftDb(appId, userId)
           try { draft.exec(schemaSQL) } catch (error) {
             return { error: error instanceof Error ? error.message : 'Unknown error during database setup' }
           } finally {
@@ -1444,7 +1446,7 @@ function buildApp(fastify: Fastify) {
 
 
       // Planning phases are internal — don't stream text/thinking to the client.
-      const silentAgentParams = { ...sharedAgentParams, onThinking: () => {}, onText: () => {}, onToolCall: () => {} }
+      const silentAgentParams = { ...sharedAgentParams, onThinking: () => { }, onText: () => { }, onToolCall: () => { } }
 
       const resumePhase = isResume ? (pendingQuestion?.buildPhase ?? 'build') : null
 
@@ -1470,7 +1472,7 @@ function buildApp(fastify: Fastify) {
           })
         } else {
           // Fresh build: start planning phase 1 from scratch
-          sendEvent('text', {text: 'Gathering Scope Information\n'} )
+          sendEvent('text', { text: 'Gathering Scope Information\n' })
           const phase1Msgs: Anthropic.MessageParam[] = [{ role: 'user', content: 'create an implementation plan for this user request\n' + userMessage }]
           currentPhase = 'planning1'
           liveMessages = phase1Msgs
@@ -1494,7 +1496,7 @@ function buildApp(fastify: Fastify) {
         await saveProgress(buildMessages, displayMsgs)
 
         // Fall through to planning phase 2
-        sendEvent('text', {text: 'Choosing the style direction\n'} )
+        sendEvent('text', { text: 'Choosing the style direction\n' })
         const phase2Msgs: Anthropic.MessageParam[] = [...buildMessages, { role: 'user', content: 'now implement the design system. here is the content of the styles.css, use the write_file tool to completly replace it with the new design' + '\n\n' + (appFs.files.get('styles.css') ?? '') }]
         currentPhase = 'planning2'
         liveMessages = phase2Msgs
@@ -1721,7 +1723,7 @@ function queryAppDb(fastify: Fastify) {
     const { appId } = request.params
     const userId = request.assertAuthenticated()
     const { sql, params = [] } = request.body
-    const db = request.query.draft === 'true' ? openDraftDb(appId) : openUserDb(appId, userId)
+    const db = request.query.draft === 'true' ? openDraftDb(appId, userId) : openUserDb(appId, userId)
     try {
       const stmt = db.prepare(sql)
       const rows = stmt.reader ? stmt.all(...params) : (() => { stmt.run(...params); return [] })()

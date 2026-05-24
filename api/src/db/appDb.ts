@@ -8,31 +8,35 @@ const DRAFT_DIR = join(DATA_DIR, 'drafts')
 mkdirSync(DATA_DIR, { recursive: true })
 mkdirSync(DRAFT_DIR, { recursive: true })
 
-export function getDraftDbPath(appId: string) {
-  return join(DRAFT_DIR, `${appId}.db`)
+// data/apps/appid/userId.db
+
+function getDraftDbPath(appId: string, userId: string) {
+  return join(DRAFT_DIR, appId, `${userId}.db`)
 }
 
-export function openDraftDb(appId: string) {
-  return new Database(getDraftDbPath(appId))
+export function openDraftDb(userId: string, appId: string) {
+  const draftAppDir = join(DRAFT_DIR, appId)
+  mkdirSync(draftAppDir, { recursive: true })
+  return new Database(getDraftDbPath(appId, userId))
 }
 
-export function getUserDbDir(appId: string) {
+function getAppDbDirectory(appId: string) {
   return join(DATA_DIR, appId)
 }
 
-export function getUserDbPath(appId: string, userId: string) {
-  return join(DATA_DIR, appId, `${userId}.db`)
+function getUserDbPath(appId: string, userId: string) {
+  return join(getAppDbDirectory(appId), `${userId}.db`)
 }
 
 export function openUserDb(appId: string, userId: string) {
-  mkdirSync(getUserDbDir(appId), { recursive: true })
+  mkdirSync(getAppDbDirectory(appId), { recursive: true })
   return new Database(getUserDbPath(appId, userId))
 }
 
 export function copyDraftToUserDb(appId: string, userId: string): void {
-  const src = getDraftDbPath(appId)
+  const src = getDraftDbPath(appId, userId)
   if (existsSync(src)) {
-    mkdirSync(getUserDbDir(appId), { recursive: true })
+    mkdirSync(getAppDbDirectory(appId), { recursive: true })
     copyFileSync(src, getUserDbPath(appId, userId))
     rmSync(src)
   }
@@ -40,5 +44,5 @@ export function copyDraftToUserDb(appId: string, userId: string): void {
 
 export function copyUserDbToDraft(appId: string, userId: string): void {
   const src = getUserDbPath(appId, userId)
-  if (existsSync(src)) copyFileSync(src, getDraftDbPath(appId))
+  if (existsSync(src)) copyFileSync(src, getDraftDbPath(appId, userId))
 }
