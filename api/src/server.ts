@@ -19,7 +19,6 @@ async function start() {
     logger: isDev
       ? { transport: { target: 'pino-pretty' } }
       : true,
-    disableRequestLogging: !isDev,
   })
 
   server.register(app)
