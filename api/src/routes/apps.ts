@@ -398,16 +398,15 @@ function createApp(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
+    const userId = request.assertAuthenticated()
     const [app] = await fastify.db
       .insert(apps)
-      .values({ name: request.body.name, creatorId: request.assertAuthenticated() })
+      .values({ name: request.body.name, creatorId: userId })
       .returning()
     await fastify.db
       .insert(appVersions)
       .values({ appId: app.id, versionNumber: 1, isDraft: true })
-
-    const userId = request.assertAuthenticated()
-    openDraftDb(app.id, userId).close()
+    openDraftDb(userId, app.id).close()
     return reply.code(201).send(app)
   })
 }
@@ -1417,7 +1416,7 @@ function buildApp(fastify: Fastify) {
               set: { dbSchema: schemaSQL, isDraft: true },
             })
           await fastify.db.update(apps).set({ updatedAt: new Date() }).where(eq(apps.id, appId))
-          const draft = openDraftDb(appId, userId)
+          const draft = openDraftDb(userId, appId)
           try { draft.exec(schemaSQL) } catch (error) {
             return { error: error instanceof Error ? error.message : 'Unknown error during database setup' }
           } finally {
@@ -1723,7 +1722,7 @@ function queryAppDb(fastify: Fastify) {
     const { appId } = request.params
     const userId = request.assertAuthenticated()
     const { sql, params = [] } = request.body
-    const db = request.query.draft === 'true' ? openDraftDb(appId, userId) : openUserDb(appId, userId)
+    const db = request.query.draft === 'true' ? openDraftDb(userId, appId) : openUserDb(appId, userId)
     try {
       const stmt = db.prepare(sql)
       const rows = stmt.reader ? stmt.all(...params) : (() => { stmt.run(...params); return [] })()
