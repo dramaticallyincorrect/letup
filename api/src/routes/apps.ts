@@ -10,7 +10,7 @@ import { and, countDistinct, desc, eq, isNotNull, max, or, sql } from 'drizzle-o
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
-import { openDb, openDraftDb, copyPublishedToDraft, copyDraftToPublished } from '../db/appDb'
+import { openDraftDb, openUserDb, copyDraftToUserDb, copyUserDbToDraft } from '../db/appDb'
 import { runAgentLoop, cached, markLastTurnCacheable, clientFor, PauseForQuestionError } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microUnitsToCredits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
@@ -405,7 +405,7 @@ function createApp(fastify: Fastify) {
     await fastify.db
       .insert(appVersions)
       .values({ appId: app.id, versionNumber: 1, isDraft: true })
-    openDb(app.id).close()
+    openDraftDb(app.id).close()
     return reply.code(201).send(app)
   })
 }
@@ -415,7 +415,7 @@ function createDraft(fastify: Fastify) {
     schema: { tags: ['apps'], summary: 'Create a new draft version from the current published version' },
   }, async (request, reply) => {
     const { appId } = request.params
-    request.assertAuthenticated()
+    const userId = request.assertAuthenticated()
 
     // Idempotent: return existing draft if one already exists
     const [latestVersion] = await fastify.db
@@ -440,7 +440,7 @@ function createDraft(fastify: Fastify) {
       })
       .returning()
 
-    copyPublishedToDraft(appId)
+    copyUserDbToDraft(appId, userId)
 
     return reply.code(201).send(draftVersion)
   })
@@ -732,7 +732,7 @@ function installApp(fastify: Fastify) {
 
     if (!draftVersion) return reply.code(400).send({ error: 'No draft version to install — build the app first' })
 
-    copyDraftToPublished(appId)
+    copyDraftToUserDb(appId, userId)
 
     await fastify.db
       .update(appVersions)
@@ -1735,9 +1735,9 @@ function queryAppDb(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId } = request.params
-    request.assertAuthenticated()
+    const userId = request.assertAuthenticated()
     const { sql, params = [] } = request.body
-    const db = request.query.draft === 'true' ? openDraftDb(appId) : openDb(appId)
+    const db = request.query.draft === 'true' ? openDraftDb(appId) : openUserDb(appId, userId)
     try {
       const stmt = db.prepare(sql)
       const rows = stmt.reader ? stmt.all(...params) : (() => { stmt.run(...params); return [] })()
