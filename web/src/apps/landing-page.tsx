@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,16 +7,6 @@ import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/auth-client'
 import { usePaddlePrices } from '@/lib/use-paddle-prices'
 
-const SHOWCASE_APPS = [
-  { g: '📝', name: 'Meeting Notes', desc: 'Summarize and extract action items', tint: 'indigo' },
-  { g: '💸', name: 'Expense Tracker', desc: 'Log and categorize spending', tint: 'sage' },
-  { g: '📊', name: 'Weekly Review', desc: 'Reflect on your week with structure', tint: 'coral' },
-  { g: '🎯', name: 'Goal Tracker', desc: 'Break goals into daily habits', tint: 'amber' },
-  { g: '📦', name: 'Inventory', desc: 'Track stock across locations', tint: 'plum' },
-  { g: '🗓️', name: 'Shift Planner', desc: 'Build and share team schedules', tint: 'sky' },
-  { g: '📚', name: 'Reading List', desc: 'Track books with AI summaries', tint: 'mint' },
-  { g: '🍳', name: 'Recipe Box', desc: 'Generate recipes from ingredients', tint: 'amber' },
-]
 
 const FREE_FEATURES = [
   '15 credits one-time',
@@ -57,23 +47,6 @@ const CORAL = {
   ctaSecColor: 'oklch(0.2 0.07 30)',
 }
 
-function TintIcon({ tint, glyph, className }: { tint: string; glyph: string; className?: string }) {
-  return (
-    <div
-      className={cn(
-        'grid place-items-center rounded-lg shrink-0 transition-transform hover:-translate-y-0.5',
-        className,
-      )}
-      style={{
-        background: `var(--tint-${tint}-bg)`,
-        color: `var(--tint-${tint}-fg)`,
-        boxShadow: '0 2px 10px oklch(0.165 0.018 68 / 0.07)',
-      }}
-    >
-      {glyph}
-    </div>
-  )
-}
 
 function LandingNav() {
   const { data: session } = useSession()
@@ -177,51 +150,175 @@ function LandingNav() {
   )
 }
 
+const SHOWCASE_SLIDES = [
+  {
+    label: 'Expense Tracker',
+    prompt: 'a particle simulator',
+    img: './showcase_1.webm',
+  },
+  {
+    label: 'Meeting Notes',
+    prompt: 'a meeting notes app with action item extraction',
+    img: './showcase_1.webm',
+  },
+  {
+    label: 'Goal Tracker',
+    prompt: 'a daily goal tracker with streaks',
+    img: './showcase_1.webm',
+  },
+]
+
+const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+
+function ScrambleText({ text }: { text: string }) {
+  const [displayed, setDisplayed] = useState(text)
+  const frameRef = useRef<number | null>(null)
+  const iterRef = useRef(0)
+
+  useEffect(() => {
+    iterRef.current = 0
+    const totalFrames = text.length * 2.5
+
+    const animate = () => {
+      iterRef.current++
+      const iter = iterRef.current
+      setDisplayed(
+        text.split('').map((char, i) => {
+          if (char === ' ') return ' '
+          if (iter > i * 2) return char
+          return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
+        }).join('')
+      )
+      if (iter < totalFrames) {
+        frameRef.current = requestAnimationFrame(animate)
+      }
+    }
+
+    if (frameRef.current) cancelAnimationFrame(frameRef.current)
+    frameRef.current = requestAnimationFrame(animate)
+    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current) }
+  }, [text])
+
+  return <span>{displayed}</span>
+}
+
+const SLIDE_DURATION = 4000
+
+function AppShowcase({
+  active,
+  visible,
+}: {
+  active: number
+  visible: boolean
+}) {
+  return (
+    <div
+      className="rounded-2xl overflow-hidden flex-1 relative"
+      style={{
+        boxShadow: '0 24px 64px oklch(0.2 0.07 30 / 0.22), 0 1px 0 oklch(1 0 0 / 0.5) inset',
+        border: '1px solid oklch(0.2 0.07 30 / 0.1)',
+        minHeight: '480px',
+      }}
+    >
+      {SHOWCASE_SLIDES.map((slide, i) => (
+        <video
+          key={i}
+          src={slide.img}
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+          style={{ opacity: i === active && visible ? 1 : 0 }}
+          autoPlay
+          loop
+          muted
+        />
+      ))}
+    </div>
+  )
+}
+
 function HeroSection() {
+  const [active, setActive] = useState(0)
+  const [visible, setVisible] = useState(true)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const goTo = (index: number) => {
+    setVisible(false)
+    setTimeout(() => {
+      setActive(index)
+      setVisible(true)
+    }, 300)
+  }
+
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      goTo((active + 1) % SHOWCASE_SLIDES.length)
+    }, SLIDE_DURATION)
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [active])
+
   return (
     <section
       className="flex items-center relative overflow-hidden"
-      style={{ background: CORAL.heroBg, minHeight: 'calc(100vh - var(--spacing) * 15)' }}
+      style={{ background: CORAL.heroBg, minHeight: '100vh' }}
       id="features"
     >
-      <div className="max-w-4xl mx-auto px-4 sm:px-10 py-18 flex flex-col items-center text-center gap-7 w-full relative">
-        <h1
-          className="m-0 font-extrabold tracking-tighter leading-none text-balance"
+      <div className="flex flex-col lg:flex-row w-full gap-10 lg:gap-14 py-18 ml-12">
+        {/* Left: aligned with nav content, constrained width */}
+        <div
+          className="flex flex-col gap-7 shrink-0"
           style={{
-            fontSize: 'clamp(2.75rem, 6vw, 4.5rem)',
-            color: CORAL.heroInk,
+            paddingLeft: 'max(1rem, calc((100vw - 90rem) / 2))',
+            width: 'clamp(280px, 36vw, 680px)',
           }}
         >
-          Built by you, for you.
-        </h1>
-
-        {/* Sub */}
-        <p
-          className="m-0 text-lg leading-relaxed max-w-lg font-normal text-pretty"
-          style={{ color: CORAL.heroSub }}
-        >
-          Create web apps that fit your unique workflows, or customize and extend apps built by the community
-        </p>
-
-        {/* CTAs */}
-        <div className="flex gap-3 justify-center flex-wrap">
-          <Link
-            to="/signup"
-            className="inline-flex items-center gap-2 h-13 px-7.5 rounded-full font-bold text-base no-underline transition-[filter]"
-            style={{ background: CORAL.ctaBg, color: CORAL.ctaColor }}
-            onMouseEnter={e => (e.currentTarget.style.filter = 'brightness(1.06)')}
-            onMouseLeave={e => (e.currentTarget.style.filter = 'none')}
+          <h1
+            className="m-0 font-extrabold tracking-tighter leading-none text-balance"
+            style={{
+              fontSize: 'clamp(2.75rem, 6vw, 4.5rem)',
+              color: CORAL.heroInk,
+            }}
           >
-            Sign up free{' '}
-            <span style={{ opacity: 0.5, fontWeight: 400 }}>→</span>
-          </Link>
+            Built by you, for you.
+          </h1>
+
+          <p
+            className="m-0 text-lg leading-relaxed font-normal text-pretty"
+            style={{ color: CORAL.heroSub }}
+          >
+            Create web apps that fit your unique workflows, or customize and extend apps built by the community
+          </p>
+
+          {/* Prompt label */}
+          <div
+            className="transition-opacity duration-300"
+            style={{ opacity: visible ? 1 : 0 }}
+          >
+            <div
+              className="inline-flex rounded-fullpy-2"
+            >
+              <span style={{ color: CORAL.heroSub, opacity: 0.3 }}>·</span>
+              <span className="text-sm font-medium italic" style={{ color: CORAL.heroInk }}>
+                "<ScrambleText text={SHOWCASE_SLIDES[active].prompt} />"
+              </span>
+            </div>
+          </div>
+
+          <div className="flex gap-3 flex-wrap">
+            <Link
+              to="/signup"
+              className="inline-flex items-center gap-2 h-13 px-7.5 rounded-full font-bold text-base no-underline transition-[filter]"
+              style={{ background: CORAL.ctaBg, color: CORAL.ctaColor }}
+              onMouseEnter={e => (e.currentTarget.style.filter = 'brightness(1.06)')}
+              onMouseLeave={e => (e.currentTarget.style.filter = 'none')}
+            >
+              Sign up free{' '}
+              <span style={{ opacity: 0.5, fontWeight: 400 }}>→</span>
+            </Link>
+          </div>
         </div>
 
-        {/* App icon grid */}
-        <div className="flex gap-2.5 justify-center flex-wrap max-w-lg mt-1">
-          {SHOWCASE_APPS.map((app, i) => (
-            <TintIcon key={i} tint={app.tint} glyph={app.g} className="size-13 text-2xl" />
-          ))}
+        {/* Right: showcase — bleed to right edge */}
+        <div className="flex-1  aspect-video flex flex-col pr-12">
+          <AppShowcase active={active} visible={visible}/>
         </div>
       </div>
     </section>
