@@ -44,5 +44,8 @@ export function copyDraftToUserDb(appId: string, userId: string): void {
 
 export function copyUserDbToDraft(appId: string, userId: string): void {
   const src = getUserDbPath(appId, userId)
-  if (existsSync(src)) copyFileSync(src, getDraftDbPath(appId, userId))
+  if (existsSync(src))
+    copyFileSync(src, getDraftDbPath(appId, userId))
+  else
+    openDraftDb(userId, appId)
 }
