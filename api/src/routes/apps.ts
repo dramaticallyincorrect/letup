@@ -11,7 +11,7 @@ import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
 import { apps, appVersions, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
 import { openDraftDb, openUserDb, copyDraftToUserDb, copyUserDbToDraft } from '../db/appDb'
-import { runAgentLoop, cached, markLastTurnCacheable, PauseForQuestionError } from '../agent'
+import { runAgentLoop, cached, markLastTurnCacheable, PauseForQuestionError, stripCacheControl } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microUnitsToCredits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
 import { VirtualFS } from '../virtual-fs/virtual-fs'
@@ -1103,21 +1103,6 @@ export async function compileVirtualFiles(files: Map<string, string>): Promise<s
 // (Anthropic API allows at most 4 total across system + tools + messages).
 function freshCacheable(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
   return markLastTurnCacheable(stripCacheControl(messages))
-}
-
-
-function stripCacheControl(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
-  return messages.map(msg => {
-    if (typeof msg.content === 'string') return msg
-    const content = (msg.content as unknown as Array<Record<string, unknown>>).map(block => {
-      if ('cache_control' in block) {
-        const { cache_control: _cc, ...rest } = block
-        return rest
-      }
-      return block
-    })
-    return { ...msg, content } as unknown as Anthropic.MessageParam
-  })
 }
 
 // ---------------------------------------------------------------------------

@@ -63,6 +63,20 @@ export function markLastTurnCacheable(messages: Anthropic.MessageParam[]): Anthr
   return result
 }
 
+export function stripCacheControl(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  return messages.map(msg => {
+    if (typeof msg.content === 'string') return msg
+    const content = (msg.content as unknown as Array<Record<string, unknown>>).map(block => {
+      if ('cache_control' in block) {
+        const { cache_control: _cc, ...rest } = block
+        return rest
+      }
+      return block
+    })
+    return { ...msg, content } as unknown as Anthropic.MessageParam
+  })
+}
+
 /**
  * Runs an agentic loop using the Anthropic SDK.
  * Supports prompt caching (pass system as array via `cached()`),
@@ -121,7 +135,7 @@ export async function runAgentLoop(params: {
       model,
       system: system as Anthropic.MessageStreamParams['system'],
       tools: sdkTools.length > 0 ? sdkTools : undefined,
-      messages,
+      messages: markLastTurnCacheable(stripCacheControl(messages)),
     }
 
     const iterStart = Date.now()
@@ -142,7 +156,7 @@ export async function runAgentLoop(params: {
     else signal?.addEventListener('abort', onAbort, { once: true })
 
     const toolUseBlocks = new Map<number, { id: string; name: string; inputJson: string }>()
-    for await (const event of stream) {      
+    for await (const event of stream) {
       if (event.type === 'content_block_start') {
         const type = event.content_block.type
         if (type === 'tool_use') {
