@@ -1652,21 +1652,19 @@ function buildApp(fastify: Fastify) {
         }
       }
     } catch (err) {
+      // Persist whatever progress was made before the failure, regardless of error type,
+      // so the user can resume after credit top-up, transient API failures, etc.
+      try { await saveProgress(liveMessages, displayMsgs) } catch (e) { fastify.log.warn(e, 'failed to save conversation history on error') }
+      try { await compileAndPersist() } catch (e) { fastify.log.warn(e, 'failed to persist source files on error') }
+
       if (err instanceof PauseForQuestionError) {
-        // Save FIRST so a page reload after this point shows the question.
-        // liveMessages already has the assistant turn with the ask_user tool_use block.
-        try { await saveProgress(liveMessages, displayMsgs) } catch (e) { fastify.log.warn(e, 'failed to save progress on pause') }
         sendEvent('paused', { questionId: err.questionId })
         if (!reply.raw.writableEnded) reply.raw.end()
         return
       }
-      compileAndPersist().catch(e => fastify.log.warn(e, 'failed to save progress after error'))
+
       const isAbort = ac.signal.aborted || (err instanceof Error && err.name === 'AbortError')
       if (isAbort) {
-        // No session-scoped tracking for runtime checks — they live only for the
-        // duration of a single Promise resolved by /apps/build/runtime-result or
-        // by the AbortSignal listener we register inline.
-        try { await saveProgress(buildMessages, displayMsgs) } catch (e) { fastify.log.warn(e, 'failed to save progress on cancel') }
         if (!reply.raw.writableEnded) sendEvent('cancelled', {})
         fastify.log.info({ appId, buildSessionId }, 'app build cancelled by client')
       } else if (err instanceof InsufficientCreditsError) {

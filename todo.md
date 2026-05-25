@@ -8,7 +8,7 @@ a marketplace for user created app
 3. logo
 4. upgrade from create page should open in new tab
 5. ~~deploying when a build is in progress should not kill the running container~~
-6. errors like anthropic running out of credits don't persist the progress
+6. ~~errors like anthropic running out of credits don't persist the progress~~
 7. return db query errors to frontend to share with agent
 8. skill?
    1. db

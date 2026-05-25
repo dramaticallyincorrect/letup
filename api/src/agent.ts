@@ -181,15 +181,17 @@ export async function runAgentLoop(params: {
     const finalMessage = await stream.finalMessage()
     signal?.removeEventListener('abort', onAbort)
     const durationSeconds = (Date.now() - iterStart) / 1000
+
+    // Push the assistant turn before billing so a thrown InsufficientCreditsError
+    // from onUsage still leaves the response in `messages` for the caller to persist.
+    messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
+
     await onUsage?.(finalMessage.usage, model, durationSeconds)
 
     if (finalMessage.stop_reason === 'max_tokens') {
-      messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
       messages.push({ role: 'user', content: [{ type: 'text', text: 'You reached the maximum number of tokens, stop thinking and start the implementation' }] })
       continue;
     }
-
-    messages.push({ role: 'assistant', content: finalMessage.content as Anthropic.ContentBlock[] })
 
     if (toolUseBlocks.size > 0) {
       const toolResults = await Promise.all(
