@@ -79,6 +79,46 @@ export class VirtualFS {
         },
     }
 
+    deleteFileTool = {
+        name: 'delete_file',
+        description: 'Delete a file',
+        input_schema: {
+            type: 'object' as const,
+            properties: {
+                path: { type: 'string', description: 'File path relative to project root' },
+            },
+            required: ['path'],
+        },
+        handler: async (input: Record<string, unknown>) => {
+            const path = input.path as string
+            this.files.delete(path)
+            return { success: true, path }
+        },
+    }
+
+    renameFileTool = {
+        name: 'rename_file',
+        description: 'Rename a file',
+        input_schema: {
+            type: 'object' as const,
+            properties: {
+                oldPath: { type: 'string', description: 'File path relative to project root' },
+                newPath: { type: 'string', description: 'New file path relative to project root' },
+            },
+            required: ['oldPath', 'newPath'],
+        },
+        handler: async (input: Record<string, unknown>) => {
+            const oldPath = input.oldPath as string
+            const newPath = input.newPath as string
+            const content = this.files.get(oldPath)
+            if (content == null) return { error: `File not found: ${oldPath}` }
+            if (this.files.get(newPath) != null) return { error: `File already exists at newPath: ${newPath}` }
+            this.files.delete(oldPath)
+            this.files.set(newPath, content)
+            return { success: true, path: newPath }
+        },
+    }
+
     readFileTool = {
         name: 'read_file',
         description: 'Read a file previously written in this session.',
