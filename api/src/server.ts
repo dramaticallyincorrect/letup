@@ -9,9 +9,13 @@ import { config } from 'dotenv'
 config({ path: join(__dirname, '../.env') })
 config({ path: join(__dirname, '../.env.local'), override: true })
 
+const DRAIN_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const POST_ABORT_CLEANUP_MS = 10_000
+
 async function start() {
   const { default: Fastify } = await import('fastify')
   const { app } = await import('./app.js')
+  const { buildRegistry, beginShutdown } = await import('./plugins/shutdown.js')
 
   const isDev = process.env.NODE_ENV !== 'production'
 
@@ -29,6 +33,35 @@ async function start() {
     server.log.error(err)
     process.exit(1)
   }
+
+  async function shutdown(signal: NodeJS.Signals) {
+    server.log.info({ signal, activeBuilds: buildRegistry.count }, 'shutdown begin')
+    beginShutdown(server.log)
+
+    const drained = await Promise.race([
+      buildRegistry.whenIdle().then(() => 'idle' as const),
+      new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), DRAIN_TIMEOUT_MS)),
+    ])
+
+    if (drained === 'timeout') {
+      server.log.warn({ activeBuilds: buildRegistry.count }, 'drain timeout — aborting in-flight builds')
+      buildRegistry.abortAll()
+      await Promise.race([
+        buildRegistry.whenIdle(),
+        new Promise(resolve => setTimeout(resolve, POST_ABORT_CLEANUP_MS)),
+      ])
+    }
+
+    try {
+      await server.close()
+    } catch (err) {
+      server.log.error(err, 'error closing server')
+    }
+    process.exit(0)
+  }
+
+  process.once('SIGTERM', () => { void shutdown('SIGTERM') })
+  process.once('SIGINT', () => { void shutdown('SIGINT') })
 }
 
 start()

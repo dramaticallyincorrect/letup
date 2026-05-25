@@ -15,6 +15,7 @@ import { runAgentLoop, cached, markLastTurnCacheable, PauseForQuestionError, str
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microUnitsToCredits, InsufficientCreditsError } from '../credits'
 import { Fastify } from '../fastify_type'
 import { VirtualFS } from '../virtual-fs/virtual-fs'
+import { buildRegistry } from '../plugins/shutdown'
 
 type DisplayMessage =
   | { role: 'user'; content: string }
@@ -1219,6 +1220,7 @@ function buildApp(fastify: Fastify) {
     const buildSessionId = randomUUID()
 
     const ac = new AbortController()
+    buildRegistry.register(ac)
 
     reply.hijack()
     reply.raw.writeHead(200, sseHeaders(request.headers.origin))
@@ -1673,6 +1675,8 @@ function buildApp(fastify: Fastify) {
         fastify.log.error(err, 'app build error')
         sendEvent('error', { message: err instanceof Error ? err.message : 'Unknown error' })
       }
+    } finally {
+      buildRegistry.unregister(ac)
     }
 
     if (!reply.raw.writableEnded) {
