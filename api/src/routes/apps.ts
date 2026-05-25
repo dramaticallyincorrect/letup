@@ -1255,7 +1255,7 @@ function buildApp(fastify: Fastify) {
     const appFs = await getAppFs(fastify, appId)
 
 
-    const history = (Array.isArray(app.conversationHistory) ? app.conversationHistory : []) as Anthropic.MessageParam[]
+    const history = (app.conversationHistory ?? []) as Anthropic.MessageParam[]
     const storedDisplay = Array.isArray(app.displayHistory) ? (app.displayHistory as DisplayMessage[]) : []
 
     // Detect resume: last displayHistory question is unanswered AND conversationHistory ends
@@ -1328,23 +1328,6 @@ function buildApp(fastify: Fastify) {
       }
     }
 
-    // Debounce handle for progressive compilation during parallel builds
-    let progressiveCompileTimer: ReturnType<typeof setTimeout> | null = null
-
-    // Attempt a non-blocking compile and emit a partial widget event if successful.
-    // Called after every file write so the preview appears as soon as enough files exist.
-    function scheduleProgressiveCompile() {
-      if (progressiveCompileTimer) clearTimeout(progressiveCompileTimer)
-      progressiveCompileTimer = setTimeout(async () => {
-        try {
-          const result = await compileAndPersist()
-          if (!('error' in result)) {
-            const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
-            sendEvent('widget', updated)
-          }
-        } catch { /* ignore — authoritative compile runs at end */ }
-      }, 500)
-    }
 
     // Tracks which phase is currently running so paused questions know where to resume.
     let currentPhase: 'planning1' | 'planning2' | 'build' = 'planning1'
@@ -1401,16 +1384,6 @@ function buildApp(fastify: Fastify) {
         onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
         onText: (delta: string) => sendEvent('text', { text: delta }),
         onToolCall: (name: string, input: unknown, result: unknown) => {
-          if (name! in [
-            askUserTool.name,
-            appFs.readFileRangeTool.name,
-            appFs.grepFileTool.name,
-            appFs.searchFilesTool.name,
-            appFs.listFilesTool.name,
-            appFs.readFileTool.name,
-          ]) {
-            scheduleProgressiveCompile()
-          }
           sendEvent('tool_call', { name, input, result })
         },
         onUsage: async (usage: Anthropic.Usage, model: string, durationSeconds: number) => {
@@ -1589,10 +1562,6 @@ function buildApp(fastify: Fastify) {
         const MAX_COMPILE_RETRIES = 2
         for (let attempt = 0; attempt <= MAX_COMPILE_RETRIES; attempt++) {
           if (appFs.files.size === 0) break
-          if (progressiveCompileTimer) {
-            clearTimeout(progressiveCompileTimer)
-            progressiveCompileTimer = null
-          }
           const compileResult = await compileAndPersist()
           if (!('error' in compileResult)) break
           if (attempt === MAX_COMPILE_RETRIES) {
