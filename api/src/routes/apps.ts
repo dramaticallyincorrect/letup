@@ -532,8 +532,20 @@ function renderAppShell(opts: {
             if (!res.ok) {
               var isDbOrAi = /\\/apps\\/[^\\/]+\\/db\\/query|\\/ai\\/generate/.test(url);
               var isExternal = url.indexOf('/') !== 0 && url.indexOf('http') === 0;
-              if (isDbOrAi || isExternal) {
-                try { parent.postMessage({ type: 'app-error', message: 'HTTP ' + res.status + ': ' + url }, '*'); } catch(_) {}
+              if (isDbOrAi) {
+                var clonedRes = res.clone();
+              clonedRes.json().then(function(body) {
+                  try { 
+                    parent.postMessage({ type: 'app-error', message: body.error }, '*'); 
+                  } catch(_) {}
+                });
+              } else if (isExternal) {
+                var clonedRes = res.clone();
+                clonedRes.text().then(function(text) {
+                    try { 
+                      parent.postMessage({ type: 'app-error', message: 'HTTP ' + res.status + ': ' + url + ' body: ' + text }, '*'); 
+                    } catch(_) {}
+                  });
               }
             }
             return res;
@@ -1746,6 +1758,10 @@ function queryAppDb(fastify: Fastify) {
       const stmt = db.prepare(sql)
       const rows = stmt.reader ? stmt.all(...params) : (() => { stmt.run(...params); return [] })()
       return reply.send({ rows })
+    } catch (err) {
+      fastify.log.error(err, 'Error occurred while executing SQL query')
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      return reply.code(500).send({ error: `query execution failed\n${message}` })
     } finally {
       db.close()
     }

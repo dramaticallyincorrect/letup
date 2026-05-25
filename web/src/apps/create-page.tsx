@@ -521,7 +521,7 @@ export function CreatePageInner({
 
   async function handleShareError() {
     if (!capturedError) return
-    const text = `The preview is showing a runtime error:\n\n${capturedError.message}${capturedError.stack ? `\n\n${capturedError.stack}` : ''}\n\nPlease fix it.`
+    const text = `The app encountered an error:\n\n${capturedError.message}${capturedError.stack ? `\n\n${capturedError.stack}` : ''}\n\nPlease fix it.`
     setCapturedError(null)
     await handleSend(text)
   }
