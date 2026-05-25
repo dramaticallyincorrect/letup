@@ -42,6 +42,19 @@ export function copyDraftToUserDb(appId: string, userId: string): void {
   }
 }
 
+export function initUserDbWithSchema(appId: string, userId: string, schemaSQL: string | null | undefined): void {
+  if (!schemaSQL || schemaSQL.trim().length === 0) return
+  const target = getUserDbPath(appId, userId)
+  if (existsSync(target)) rmSync(target)
+  mkdirSync(getAppDbDirectory(appId), { recursive: true })
+  const db = new Database(target)
+  try {
+    db.exec(schemaSQL)
+  } finally {
+    db.close()
+  }
+}
+
 export function copyUserDbToDraft(appId: string, userId: string): void {
   const src = getUserDbPath(appId, userId)
   if (existsSync(src))

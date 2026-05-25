@@ -3,6 +3,7 @@ import { eq, desc, sql, and, countDistinct } from 'drizzle-orm'
 import { apps, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats, userSubscriptions, aiUsageLogs } from '../db/schema'
 import { user as users } from '../db/auth-schema'
 import { Fastify } from '../fastify_type'
+import { initUserDbWithSchema } from '../db/appDb'
 
 const marketplacePlugin: FastifyPluginAsync = async (fastify): Promise<void> => {
   submitApp(fastify)
@@ -263,7 +264,7 @@ function installMarketplaceListing(fastify: Fastify) {
       if (!listing) return reply.status(404).send({ error: 'Not in marketplace' })
 
       const [latestVersion] = await fastify.db
-        .select({ id: appVersions.id })
+        .select({ id: appVersions.id, dbSchema: appVersions.dbSchema })
         .from(appVersions)
         .where(and(eq(appVersions.appId, appId), sql`${appVersions.isDraft} is not true`))
         .orderBy(desc(appVersions.versionNumber))
@@ -289,6 +290,13 @@ function installMarketplaceListing(fastify: Fastify) {
         if (count >= 3) {
           return reply.status(403).send({ error: 'Free plan is limited to 3 installed apps. Uninstall one or upgrade to Pro.' })
         }
+      }
+
+      try {
+        initUserDbWithSchema(appId, userId, latestVersion.dbSchema)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to initialize app database'
+        return reply.status(500).send({ error: message })
       }
 
       await fastify.db
