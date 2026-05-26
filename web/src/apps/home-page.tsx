@@ -99,7 +99,7 @@ export function HomePage() {
         </div>
 
         {showUpgradeBanner && <UpgradeBanner />}
-        <LibraryView apps={filteredMine} loading={isPending} onToast={setToast} />
+        <LibraryView apps={filteredMine} loading={isPending} onToast={setToast} currentUserId={session?.user?.id} />
       </main>
 
       <Toast message={toast} onDismiss={() => setToast(null)} />
@@ -112,10 +112,12 @@ function LibraryView({
   apps,
   loading,
   onToast,
+  currentUserId,
 }: {
   apps: AppCard[]
   loading: boolean
   onToast: (msg: string) => void
+  currentUserId?: string | null
 }) {
   const queryClient = useQueryClient()
   const [pendingDelete, setPendingDelete] = useState<AppCard | null>(null)
@@ -165,7 +167,7 @@ function LibraryView({
         </Link>
 
         {apps.map(a => (
-          <AppCardTile key={a.id} app={a} onDeleteRequest={setPendingDelete} />
+          <AppCardTile key={a.id} app={a} onDeleteRequest={setPendingDelete} currentUserId={currentUserId} />
         ))}
 
         {apps.length === 0 && (
@@ -214,7 +216,7 @@ function UpgradeBanner() {
         <SparklesIcon size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground m-0">Free plan · 3 app limit</p>
+        <p className="text-sm font-semibold text-foreground m-0">Free plan · 2 app limit</p>
         <p className="text-xs text-muted-foreground m-0 mt-0.5">
           Upgrade to Pro for unlimited apps and 100 monthly credits.
         </p>
@@ -233,9 +235,11 @@ function UpgradeBanner() {
 function AppCardTile({
   app,
   onDeleteRequest,
+  currentUserId,
 }: {
   app: AppCard
   onDeleteRequest: (app: AppCard) => void
+  currentUserId?: string | null
 }) {
   const navigate = useNavigate()
 
@@ -278,14 +282,16 @@ function AppCardTile({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={e => {
-                e.preventDefault()
-                navigate({ to: '/apps/$appId/edit', params: { appId: app.id } })
-              }}
-            >
-              Edit
-            </DropdownMenuItem>
+            {app.creatorId === currentUserId && (
+              <DropdownMenuItem
+                onClick={e => {
+                  e.preventDefault()
+                  navigate({ to: '/apps/$appId/edit', params: { appId: app.id } })
+                }}
+              >
+                Edit
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={e => {

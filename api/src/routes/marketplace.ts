@@ -287,8 +287,8 @@ function installMarketplaceListing(fastify: Fastify) {
           .innerJoin(appVersions, eq(userAppInstalls.versionId, appVersions.id))
           .where(eq(userAppInstalls.userId, userId))
 
-        if (count >= 3) {
-          return reply.status(403).send({ error: 'Free plan is limited to 3 installed apps. Uninstall one or upgrade to Pro.' })
+        if (count >= 2) {
+          return reply.status(403).send({ error: 'Free plan is limited to 2 installed apps. Uninstall one or upgrade to Pro.' })
         }
       }
 

@@ -660,12 +660,13 @@ function getAppForEdit(fastify: Fastify) {
     const { appId } = request.params
     const userId = request.assertAuthenticated()
     const appRow = await fastify.db
-      .select({ latestVersionNumber: apps.latestVersionNumber })
+      .select({ latestVersionNumber: apps.latestVersionNumber, creatorId: apps.creatorId })
       .from(apps)
       .where(eq(apps.id, appId))
       .limit(1)
       .then(rows => rows[0] ?? null)
     if (!appRow) return reply.code(404).send({ error: 'app not found' })
+    if (appRow.creatorId !== userId) return reply.code(403).send({ error: 'Forbidden' })
 
     const [draftVersion] = await fastify.db
       .select({ versionNumber: appVersions.versionNumber })
@@ -698,7 +699,14 @@ function patchApp(fastify: Fastify) {
     },
   }, async (request, reply) => {
     const { appId } = request.params
-    request.assertAuthenticated()
+    const userId = request.assertAuthenticated()
+    const [app] = await fastify.db
+      .select({ creatorId: apps.creatorId })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1)
+    if (!app) return reply.code(404).send({ error: 'app not found' })
+    if (app.creatorId !== userId) return reply.code(403).send({ error: 'Forbidden' })
     const patch = request.body
     const [updated] = await fastify.db
       .update(apps)

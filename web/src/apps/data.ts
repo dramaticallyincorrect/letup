@@ -19,6 +19,7 @@ export type MarketplaceApp = {
 
 export type AppCard = {
   id: string
+  creatorId: string | null
   name: string
   glyph: string
   tint: AppTint
@@ -67,6 +68,7 @@ export function getAppTint(id: string): AppTint {
 export function widgetToAppCard(w: AppSummary): AppCard {
   return {
     id: w.id,
+    creatorId: w.creatorId,
     name: w.name,
     glyph: getAppGlyph(w.name),
     tint: getAppTint(w.id),

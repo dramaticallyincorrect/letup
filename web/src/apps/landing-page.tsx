@@ -10,8 +10,8 @@ import { usePaddlePrices } from '@/lib/use-paddle-prices'
 
 const FREE_FEATURES = [
   '15 credits one-time',
-  'Sonnet 4.6 only',
-  '3 installed apps',
+  'smaller, slower-tier models',
+  '2 installed apps',
   'Included app data storage',
   'Share your app in letup app store'
 ]
@@ -19,7 +19,7 @@ const FREE_FEATURES = [
 const PRO_FEATURES_MONTHLY = [
   '100 credits / month',
   'Advanced Models: Opus 4.7',
-  'Customize app store apps',
+  'Customize app store apps: coming soon',
   'Unlimited apps',
   'Share your app in letup app store'
 ]
@@ -27,7 +27,7 @@ const PRO_FEATURES_MONTHLY = [
 const PRO_FEATURES_ANNUAL = [
   '1,200 credits upfront',
   'Advanced Models: Opus 4.7',
-  'Customize app store apps',
+  'Customize app store apps: coming soon',
   'Unlimited apps',
   'Share your app in letup app store'
 ]
@@ -548,9 +548,6 @@ function PricingSection() {
     <section id="pricing" className="py-24 px-4 sm:px-10 bg-background">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-15">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground m-0 mb-2.5">
-            Pricing
-          </p>
           <h2
             className="m-0 font-extrabold tracking-tight text-foreground"
             style={{ fontSize: 'clamp(1.625rem, 3vw, 2.5rem)' }}
