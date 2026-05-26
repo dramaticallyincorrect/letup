@@ -152,35 +152,37 @@ function ChatComposer({
           className="min-h-7 max-h-40 border-0 resize-none font-sans border-none bg-transparent focus:border-0 focus-visible:ring-0 px-1 text-[15px] placeholder:text-muted-foreground/70"
         />
         <div className="flex items-center gap-1.5 mt-2">
-          <Select
-            value={selectedModel}
-            onValueChange={(v) => onModelChange(v as ModelID)}
-            disabled={isSending}
-          >
-            <SelectTrigger
-              size="sm"
-              className="h-7 w-auto gap-1.5 border-0 bg-transparent text-xs text-muted-foreground hover:bg-secondary shadow-none focus-visible:ring-0"
+          {
+            billing?.plan === 'free' ? <Link to="/payment" search={{ billing: 'annual' }} target="_blank" className="text-accent text-sm">Upgrade for better results</Link> : <Select
+              value={selectedModel}
+              onValueChange={(v) => onModelChange(v as ModelID)}
+              disabled={isSending}
             >
-              <span className="inline-flex items-center gap-1.5">
-                <span className="text-sm">{activeModel.label}</span>
-              </span>
-            </SelectTrigger>
-            <SelectContent
-              position="popper" side="top" sideOffset={8} align="start" className='p-1.5'>
-              {MODELS.map(m => (
-                <SelectItem key={m.id} value={m.id} className="py-2" disabled={m.id === 'claude-opus-4-7' && billing?.plan !== 'pro'}>
-                  <span className="flex items-center gap-2.5">
-                    <span className="flex flex-col items-start">
-                      <span className="text-sm">{m.label}</span>
-                      {
-                        m.id === 'claude-opus-4-7' && billing?.plan !== 'pro' ? <span className="text-[11px] text-foreground">Upgrade to unlock</span> : <span className="text-[11px] text-muted-foreground">{m.description}</span>
-                      }
+              <SelectTrigger
+                size="sm"
+                className="h-7 w-auto gap-1.5 border-0 bg-transparent text-xs text-muted-foreground hover:bg-secondary shadow-none focus-visible:ring-0"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-sm">{activeModel.label}</span>
+                </span>
+              </SelectTrigger>
+              <SelectContent
+                position="popper" side="top" sideOffset={8} align="start" className='p-1.5'>
+                {MODELS.map(m => (
+                  <SelectItem key={m.id} value={m.id} className="py-2" disabled={m.id === 'claude-opus-4-7' && billing?.plan !== 'pro'}>
+                    <span className="flex items-center gap-2.5">
+                      <span className="flex flex-col items-start">
+                        <span className="text-sm">{m.label}</span>
+                        {
+                          m.id === 'claude-opus-4-7' && billing?.plan !== 'pro' ? <span className="text-[11px] text-foreground">Upgrade to unlock</span> : <span className="text-[11px] text-muted-foreground">{m.description}</span>
+                        }
+                      </span>
                     </span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
           <div className="flex-1"></div>
           {isSending ? (
             <Button
@@ -756,7 +758,7 @@ export function CreatePageInner({
                   <span className="font-medium">Low credits:</span>
                   <span>{effectiveCredits} left.</span>
                   {billing?.plan === 'free' && (
-                    <Link to="/account" className="underline font-medium ml-auto">
+                    <Link to="/account" className="underline font-medium ml-auto" target="_blank">
                       Upgrade
                     </Link>
                   )}
@@ -808,7 +810,11 @@ export function CreatePageInner({
                     Your app will appear here
                   </h3>
                   <p className="mt-2 text-[15px] text-muted-foreground max-w-80 leading-[1.55] mx-auto">
-                    Send a message — the preview updates when the app is ready.
+                    {
+                      billing?.plan === 'free'
+                        ? 'Using older models. Upgrade for better results using advanced models.'
+                        : 'Send a message — the preview updates when the app is ready.'
+                    }
                   </p>
                 </div>
 

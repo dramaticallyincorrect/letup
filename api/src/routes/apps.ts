@@ -1211,13 +1211,13 @@ function buildApp(fastify: Fastify) {
   }, async (request, reply) => {
     const { appId, userMessage, model: modelOverride } = request.body
 
-    if (modelOverride) {
-      const allowed = ['claude-opus-4-7', 'claude-sonnet-4-6']
-      if (process.env.NODE_ENV !== 'production' || request.isAdmin()) allowed.push('deepseek-v4-flash')
-      if (!allowed.includes(modelOverride)) {
-        return reply.code(400).send({ error: 'Invalid model specified' })
-      }
-    }
+    // if (modelOverride) {
+    //   const allowed = ['claude-opus-4-7', 'claude-sonnet-4-6']
+    //   if (process.env.NODE_ENV !== 'production' || request.isAdmin()) allowed.push('deepseek-v4-pro')
+    //   if (!allowed.includes(modelOverride)) {
+    //     return reply.code(400).send({ error: 'Invalid model specified' })
+    //   }
+    // }
 
     const userId = request.assertAuthenticated()
 
@@ -1398,7 +1398,7 @@ function buildApp(fastify: Fastify) {
 
 
       const sharedAgentParams = {
-        model: modelOverride ?? planningModel,
+        model:  planningModel,
         signal: ac.signal,
         onThinking: (delta: string) => sendEvent('thinking', { text: delta }),
         onText: (delta: string) => sendEvent('text', { text: delta }),

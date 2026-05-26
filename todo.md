@@ -7,8 +7,7 @@ a marketplace for user created app
 
 3. logo
 4. ~~async initial runtime check, same as aks_question is handled~~
-5. add forked id to apps, for now disable publishing forks to app store
-6. upgrade from create page should open in new tab
+6. ~~upgrade from create page should open in new tab~~
 7. design first plan second
 8. skill?
    1. db
@@ -36,21 +35,22 @@ a marketplace for user created app
 ## out of scope
 
 1. updates to the app with database change when submiting to marketplace
-2. points of optimization
+2. edit app store apps
+3. points of optimization
    1. store files in github instead of database
    2. save ai usage logs to analytics instead of postgres?
-3. ultimate plan
+4. ultimate plan
    1. proxy for circumventing cors
-4. plan when and how should apps be deleted, complete removal or always only marked as deleted
-5. share app data or component code with other apps
-6. canvas that can host multiple self contained components
+5. plan when and how should apps be deleted, complete removal or always only marked as deleted
+6. share app data or component code with other apps
+7. canvas that can host multiple self contained components
    1. the main page be a editable canvas itself, with default apps like header
-7. shared (between users) database
-8. open apps side by side
-9. install created apps from dashboard
-10. submit updates to marketplace
-11. github to store versions
-12. official apps
+8. shared (between users) database
+9. open apps side by side
+10. install created apps from dashboard
+11. submit updates to marketplace
+12. github to store versions
+13. official apps
     1.  builder
     2.  include border and shadow in default styles.css
     3.  give build tool
@@ -60,13 +60,13 @@ a marketplace for user created app
     7.  back to ask questions to clarify
     8.  try one with plan + thinking and one without
     9.  research context optimizations
-13. credit
+14. credit
     1. credit top up
- 14. users choose the colors
+ 15. users choose the colors
      1.  use across apps option
- 15. collapse conversation, only show the model text output
- 16. play a small sound when build is done
- 17. empty view for my apps
+ 16. collapse conversation, only show the model text output
+ 17. play a small sound when build is done
+ 18. empty view for my apps
 
 
 
