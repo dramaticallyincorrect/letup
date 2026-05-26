@@ -4,7 +4,7 @@ export function TermsPage() {
       <div className="max-w-3xl mx-auto px-10 py-24 space-y-10">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Terms of Service</h1>
-          <p className="text-sm text-muted-foreground mt-2">Last updated: May 19, 2025</p>
+          <p className="text-sm text-muted-foreground mt-2">Last updated: May 26, 2025</p>
         </div>
 
         <section className="space-y-3">
@@ -20,7 +20,7 @@ export function TermsPage() {
           <h2 className="text-lg font-semibold text-foreground">2. Description of Service</h2>
           <p className="text-muted-foreground leading-relaxed">
             letup is a platform that lets users create, customize, and run AI-powered web applications. Apps are
-            generated and executed using large language models via the Anthropic API. Usage is metered in credits
+            generated and executed using large language models. Usage is metered in credits
             that are consumed as you interact with AI features.
           </p>
         </section>
@@ -43,12 +43,11 @@ export function TermsPage() {
           <ul className="list-disc list-inside space-y-2 text-muted-foreground leading-relaxed">
             <li>
               <span className="font-medium text-foreground">Free Plan:</span> Includes a one-time allocation of 15
-              credits. Limited to 3 installed apps and access to Sonnet models.
+              credits. Limited to 2 installed apps and AI models choosen by the platform dynamically.
             </li>
             <li>
               <span className="font-medium text-foreground">Pro Plan:</span> Includes 100 credits refreshed monthly
-              , unlimited installed apps, and access to all available models
-              including Opus.
+              , unlimited installed apps, and access to all available AI models.
             </li>
           </ul>
           <p className="text-muted-foreground leading-relaxed">
