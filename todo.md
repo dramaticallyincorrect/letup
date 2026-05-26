@@ -6,10 +6,10 @@ a marketplace for user created app
 
 
 3. logo
-4. upgrade from create page should open in new tab
-5. ~~deploying when a build is in progress should not kill the running container~~
-6. ~~errors like anthropic running out of credits don't persist the progress~~
-7. ~~return db query errors to frontend to share with agent~~
+4. ~~async initial runtime check, same as aks_question is handled~~
+5. add forked id to apps, for now disable publishing forks to app store
+6. upgrade from create page should open in new tab
+7. design first plan second
 8. skill?
    1. db
 9.  migrations
@@ -22,8 +22,7 @@ a marketplace for user created app
 12. add screen shot of my apps to landing page
     1.  a shader
     2.  inkwel
-13. make sure data is backed up by hetzner
-14. go through the core workflows and review the code
+13. go through the core workflows and review the code
    1. no apps
    2. create app
    3. submit to market place

@@ -289,9 +289,21 @@ export function CreatePageInner({
   const currentTint = widgetId ? getAppTint(widgetId) : 'coral'
   const currentGlyph = getAppGlyph(appName)
 
-  async function handleSend(text: string) {
+  const autoFixAttemptsRef = useRef(0)
+  const MAX_AUTO_FIX_ATTEMPTS = 2
+
+  async function handleSend(text: string, _isAutoFix = false) {
     const msg = text.trimEnd().trimStart()
     if (!msg || isSending) return
+
+    if (!_isAutoFix) {
+      autoFixAttemptsRef.current = 0
+      // Cancel any pending auto-fix timer from a previous build
+      if (verifyTimerRef.current) {
+        clearTimeout(verifyTimerRef.current)
+        verifyTimerRef.current = null
+      }
+    }
 
     setIsSending(true)
 
@@ -316,11 +328,12 @@ export function CreatePageInner({
 
     // Pre-arm the runtime-error collector for this build so that errors thrown
     // during the first render of a new compiled widget are captured even if
-    // they fire before the server's `runtime_check` event arrives.
+    // they fire before the `done` event arrives.
     verifyCollectorRef.current = { checkId: '', errors: [] }
 
     const ac = new AbortController()
     abortRef.current = ac
+    let completedNormally = false
 
     try {
       const res = await client.buildApp(activeWidgetId, msg, { signal: ac.signal, model: selectedModel })
@@ -389,36 +402,6 @@ export function CreatePageInner({
         } else if (event === 'paused') {
           // Build paused waiting for question answer. Stream will close naturally.
           // isSending / currentActivity are cleaned up in the finally block below.
-        } else if (event === 'runtime_check') {
-          const { checkId } = data as { checkId: string; attempt: number; maxAttempts: number }
-          if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current)
-          // Carry over any errors already captured during this build (e.g. from
-          // the widget's first render, which fires before runtime_check arrives).
-          const prior: RuntimeErrorReport[] = verifyCollectorRef.current?.errors ?? []
-          verifyCollectorRef.current = { checkId, errors: prior }
-
-          verifyTimerRef.current = setTimeout(async () => {
-            const c = verifyCollectorRef.current
-            verifyCollectorRef.current = null
-            verifyTimerRef.current = null
-
-            if (!c) return
-            try {
-              if (c.errors.length === 0) {
-                setHasShownVersion(true)
-                await client.reportRuntimeResult(c.checkId, { ok: true })
-              } else {
-                const seen = new Set<string>()
-                const deduped = c.errors.filter(e => seen.has(e.message) ? false : (seen.add(e.message), true))
-                const errText = deduped
-                  .map(e => `[${e.source}] ${e.message}${e.stack ? `\n${e.stack}` : ''}`)
-                  .join('\n\n')
-                await client.reportRuntimeResult(c.checkId, { ok: false, error: errText })
-              }
-            } catch (e) {
-              console.error('Failed to report runtime result', e)
-            }
-          }, 700)
         } else if (event === 'low_credits') {
           const { credits } = data as { credits: number }
           setLowCreditsBalance(credits)
@@ -460,6 +443,30 @@ export function CreatePageInner({
             }
             return next
           })
+          // On the first preview, wait 700ms to collect any runtime errors that fire
+          // during the initial render, then either mark as shown or auto-fix.
+          if (!hasShownVersion && verifyCollectorRef.current) {
+            completedNormally = true
+            if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current)
+            verifyTimerRef.current = setTimeout(() => {
+              const c = verifyCollectorRef.current
+              verifyCollectorRef.current = null
+              verifyTimerRef.current = null
+              if (!c) return
+
+              if (c.errors.length === 0) {
+                setHasShownVersion(true)
+              } else if (autoFixAttemptsRef.current < MAX_AUTO_FIX_ATTEMPTS) {
+                autoFixAttemptsRef.current++
+                const seen = new Set<string>()
+                const deduped = c.errors.filter(e => seen.has(e.message) ? false : (seen.add(e.message), true))
+                const errText = deduped
+                  .map(e => `[${e.source}] ${e.message}${e.stack ? `\n${e.stack}` : ''}`)
+                  .join('\n\n')
+                handleSend(`Runtime error in preview:\n\n${errText}\n\nPlease fix the issue.`, true)
+              }
+            }, 700)
+          }
         }
       }
     } catch (err) {
@@ -484,14 +491,16 @@ export function CreatePageInner({
     abortRef.current = null
     setCurrentActivity(null)
     setIsSending(false)
-    // Any errors after this point belong to the post-build interaction window
-    // and should surface via the share-banner, not auto-fix.
-    verifyCollectorRef.current = null
-    if (verifyTimerRef.current) {
-      clearTimeout(verifyTimerRef.current)
-      verifyTimerRef.current = null
+    if (!completedNormally) {
+      // On abort or error, cancel any pending auto-fix timer and stop collecting errors.
+      verifyCollectorRef.current = null
+      if (verifyTimerRef.current) {
+        clearTimeout(verifyTimerRef.current)
+        verifyTimerRef.current = null
+      }
     }
-
+    // If completedNormally, the 700ms timer keeps running to collect runtime errors
+    // and will clear verifyCollectorRef when it fires.
   }
 
   function handleStop() {
