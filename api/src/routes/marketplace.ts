@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { eq, desc, sql, and, countDistinct } from 'drizzle-orm'
-import { apps, appVersions, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats, userSubscriptions, aiUsageLogs } from '../db/schema'
+import { apps, appVersions, appConversations, userAppInstalls, marketplaceSubmissions, marketplaceListings, marketplaceStats, userSubscriptions, aiUsageLogs } from '../db/schema'
 import { user as users } from '../db/auth-schema'
 import { Fastify } from '../fastify_type'
 import { initUserDbWithSchema } from '../db/appDb'
@@ -443,11 +443,18 @@ function getSubmissionHistory(fastify: Fastify) {
           description: marketplaceSubmissions.description,
           status: marketplaceSubmissions.status,
           createdAt: marketplaceSubmissions.createdAt,
-          conversationHistory: apps.conversationHistory,
+          conversationHistory: appConversations.conversationHistory,
         })
         .from(marketplaceSubmissions)
         .innerJoin(apps, eq(apps.id, marketplaceSubmissions.appId))
         .innerJoin(users, eq(users.id, marketplaceSubmissions.submittedBy))
+        .leftJoin(
+          appConversations,
+          and(
+            eq(appConversations.appId, marketplaceSubmissions.appId),
+            eq(appConversations.userId, marketplaceSubmissions.submittedBy),
+          ),
+        )
         .where(eq(marketplaceSubmissions.id, submissionId))
 
       if (!row) return reply.status(404).send({ error: 'Submission not found' })

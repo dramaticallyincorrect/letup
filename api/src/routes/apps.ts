@@ -9,7 +9,7 @@ import { Scanner } from '@tailwindcss/oxide'
 import { and, countDistinct, desc, eq, isNotNull, max, or, sql } from 'drizzle-orm'
 import { build } from 'esbuild'
 import Anthropic from '@anthropic-ai/sdk'
-import { apps, appVersions, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
+import { apps, appVersions, appConversations, userAppInstalls, aiUsageLogs, userSubscriptions } from '../db/schema'
 import { openDraftDb, openUserDb, copyDraftToUserDb, copyUserDbToDraft } from '../db/appDb'
 import { runAgentLoop, cached, markLastTurnCacheable, PauseForQuestionError, stripCacheControl } from '../agent'
 import { hasCredits, checkAndDeductCredits, logUsage, tokensToMicroUnits, microUnitsToCredits, InsufficientCreditsError } from '../credits'
@@ -448,7 +448,6 @@ function getApp(fastify: Fastify) {
   fastify.get<{ Params: { appId: string } }>('/apps/:appId', {
     schema: { tags: ['apps'], summary: 'Get an app by ID' },
   }, async (request, reply) => {
-    request.assertAuthenticated()
     const [row] = await fastify.db
       .select(APP_VERSION_COLUMNS)
       .from(apps)
@@ -659,7 +658,7 @@ function getAppForEdit(fastify: Fastify) {
     schema: { tags: ['apps'], summary: 'Get an app by ID including conversation history (prefers draft version)' },
   }, async (request, reply) => {
     const { appId } = request.params
-    request.assertAuthenticated()
+    const userId = request.assertAuthenticated()
     const appRow = await fastify.db
       .select({ latestVersionNumber: apps.latestVersionNumber })
       .from(apps)
@@ -675,7 +674,7 @@ function getAppForEdit(fastify: Fastify) {
       .limit(1)
 
     const versionNumber = draftVersion?.versionNumber ?? appRow.latestVersionNumber
-    const row = await loadAppWithVersionNumber(fastify.db, appId, versionNumber)
+    const row = await loadAppWithVersionNumber(fastify.db, appId, versionNumber, userId)
     if (!row) return reply.code(404).send({ error: 'app not found' })
     return reply.send(row)
   })
@@ -1126,8 +1125,8 @@ const APP_VERSION_COLUMNS = {
   name: apps.name,
   description: apps.description,
   latestVersionNumber: apps.latestVersionNumber,
-  conversationHistory: apps.conversationHistory,
-  displayHistory: apps.displayHistory,
+  conversationHistory: sql<unknown[]>`coalesce(${appConversations.conversationHistory}, '[]'::jsonb)`.as('conversation_history'),
+  displayHistory: sql<unknown[]>`coalesce(${appConversations.displayHistory}, '[]'::jsonb)`.as('display_history'),
   createdAt: apps.createdAt,
   updatedAt: apps.updatedAt,
   versionNumber: appVersions.versionNumber,
@@ -1138,7 +1137,7 @@ const APP_VERSION_COLUMNS = {
   dbSchema: appVersions.dbSchema,
 }
 
-async function loadAppWithVersion(db: import('../db').DB, appId: string) {
+async function loadAppWithVersion(db: import('../db').DB, appId: string, userId: string) {
   const [row] = await db
     .select(APP_VERSION_COLUMNS)
     .from(apps)
@@ -1149,11 +1148,18 @@ async function loadAppWithVersion(db: import('../db').DB, appId: string) {
         eq(appVersions.isDraft, true),
       ),
     )
+    .leftJoin(
+      appConversations,
+      and(
+        eq(appConversations.appId, apps.id),
+        eq(appConversations.userId, userId),
+      ),
+    )
     .where(eq(apps.id, appId))
   return row ?? null
 }
 
-async function loadAppWithVersionNumber(db: import('../db').DB, appId: string, versionNumber: number) {
+async function loadAppWithVersionNumber(db: import('../db').DB, appId: string, versionNumber: number, userId: string) {
   const [row] = await db
     .select(APP_VERSION_COLUMNS)
     .from(apps)
@@ -1162,6 +1168,13 @@ async function loadAppWithVersionNumber(db: import('../db').DB, appId: string, v
       and(
         eq(appVersions.appId, apps.id),
         eq(appVersions.versionNumber, versionNumber),
+      ),
+    )
+    .leftJoin(
+      appConversations,
+      and(
+        eq(appConversations.appId, apps.id),
+        eq(appConversations.userId, userId),
       ),
     )
     .where(eq(apps.id, appId))
@@ -1200,7 +1213,7 @@ function buildApp(fastify: Fastify) {
 
     const userId = request.assertAuthenticated()
 
-    const app = await loadAppWithVersion(fastify.db, appId)
+    const app = await loadAppWithVersion(fastify.db, appId, userId)
     if (!app) return reply.code(404).send({ error: 'app not found' })
 
     // Draft must already exist (created via POST /apps or POST /apps/:appId/draft)
@@ -1354,14 +1367,16 @@ function buildApp(fastify: Fastify) {
     }
 
     async function saveProgress(msgs: Anthropic.MessageParam[], display: DisplayMessage[]) {
+      const now = new Date()
+      const conversationHistory = stripCacheControl(msgs) as unknown[]
+      const displayHistory = display as unknown[]
       await fastify.db
-        .update(apps)
-        .set({
-          conversationHistory: stripCacheControl(msgs) as unknown[],
-          displayHistory: display as unknown[],
-          updatedAt: new Date(),
+        .insert(appConversations)
+        .values({ userId, appId, conversationHistory, displayHistory, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [appConversations.userId, appConversations.appId],
+          set: { conversationHistory, displayHistory, updatedAt: now },
         })
-        .where(eq(apps.id, appId))
     }
 
     let buildMessages: Anthropic.MessageParam[] = messages
@@ -1584,7 +1599,7 @@ function buildApp(fastify: Fastify) {
       await saveProgress(allMessages, displayMsgs)
 
       if (appFs.files.size > 0) {
-        const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber)
+        const updated = await loadAppWithVersionNumber(fastify.db, appId, targetVersionNumber, userId)
         sendEvent('widget', updated)
       }
     } catch (err) {
@@ -1621,13 +1636,29 @@ function buildApp(fastify: Fastify) {
 }
 
 async function getAppFs(fastify: Fastify, appId: string): Promise<VirtualFS> {
-  const app = await loadAppWithVersion(fastify.db, appId)
-
   const [draftRow] = await fastify.db
     .select({ id: appVersions.id, versionNumber: appVersions.versionNumber, sourceFiles: appVersions.sourceFiles, compiledCode: appVersions.compiledCode })
     .from(appVersions)
     .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
     .limit(1)
+
+  let fallbackSourceFiles: Array<{ path: string; content: string }> | null = null
+  if (!draftRow || !Array.isArray(draftRow.sourceFiles) || draftRow.sourceFiles.length === 0) {
+    const [latestVersion] = await fastify.db
+      .select({ sourceFiles: appVersions.sourceFiles })
+      .from(apps)
+      .leftJoin(
+        appVersions,
+        and(
+          eq(appVersions.appId, apps.id),
+          eq(appVersions.versionNumber, apps.latestVersionNumber),
+        ),
+      )
+      .where(eq(apps.id, appId))
+      .limit(1)
+    fallbackSourceFiles = (latestVersion?.sourceFiles as Array<{ path: string; content: string }> | null) ?? null
+  }
+
   const virtualFiles = new Map<string, string>()
 
   // Seed default shadcn scaffold components first so the agent can use them without
@@ -1638,9 +1669,9 @@ async function getAppFs(fastify: Fastify, appId: string): Promise<VirtualFS> {
 
   // Seed with existing source files from the draft version (which always has the latest
   // files regardless of whether latestVersionNumber has been updated yet).
-  const seedFiles = Array.isArray(draftRow.sourceFiles) && draftRow.sourceFiles.length > 0
-    ? draftRow.sourceFiles
-    : app.sourceFiles
+  const seedFiles = Array.isArray(draftRow?.sourceFiles) && draftRow!.sourceFiles!.length > 0
+    ? draftRow!.sourceFiles
+    : fallbackSourceFiles
   if (Array.isArray(seedFiles)) {
     for (const f of seedFiles as Array<{ path: string; content: string }>) {
       virtualFiles.set(f.path, f.content)

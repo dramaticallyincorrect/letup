@@ -10,12 +10,18 @@ export const apps = pgTable('apps', {
   creatorId: text('creator_id').references(() => user.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
-  conversationHistory: jsonb('conversation_history').notNull().default([]),
-  displayHistory: jsonb('display_history').notNull().default([]),
   latestVersionNumber: integer('latest_version_number').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
+
+export const appConversations = pgTable('app_conversations', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  appId: uuid('app_id').notNull().references(() => apps.id, { onDelete: 'cascade' }),
+  conversationHistory: jsonb('conversation_history').notNull().default([]),
+  displayHistory: jsonb('display_history').notNull().default([]),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.appId] })])
 
 export const appVersions = pgTable('app_versions', {
   id: uuid('id').primaryKey().defaultRandom(),
