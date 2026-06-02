@@ -1209,7 +1209,7 @@ function buildApp(fastify: Fastify) {
       },
     },
   }, async (request, reply) => {
-    const { appId, userMessage, model: modelOverride } = request.body
+    const { appId, userMessage } = request.body
 
     // if (modelOverride) {
     //   const allowed = ['claude-opus-4-7', 'claude-sonnet-4-6']

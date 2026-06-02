@@ -2,12 +2,8 @@
   "name": "my-new-idea",
   "private": true,
   "scripts": {
+    "dev": "pnpm -r --parallel run dev",
     "build": "pnpm --filter api build && pnpm --filter web build",
-    "typecheck": "pnpm --filter api typecheck && pnpm --filter web typecheck",
-    "dev:web": "pnpm --filter web dev",
-    "dev:api": "pnpm --filter api dev"
-  },
-  "devDependencies": {
-    "concurrently": "^9.1.2"
+    "typecheck": "pnpm --filter api typecheck && pnpm --filter web typecheck"
   }
 }
