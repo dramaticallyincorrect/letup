@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { mkdirSync, copyFileSync, existsSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 
 const DATA_DIR = process.env.DATA_DIR ?? join(__dirname, '../../data/apps')
 const DRAFT_DIR = join(DATA_DIR, 'drafts')
@@ -42,12 +42,13 @@ export function copyDraftToUserDb(appId: string, userId: string): void {
   }
 }
 
-export function initUserDbWithSchema(appId: string, userId: string, schemaSQL: string | null | undefined): void {
+// Wipe `targetPath` and recreate it with `schemaSQL` applied. No-op if the schema
+// is empty (the caller just gets a fresh, tableless DB on next open).
+function initDbWithSchema(targetPath: string, schemaSQL: string | null | undefined): void {
+  if (existsSync(targetPath)) rmSync(targetPath)
+  mkdirSync(dirname(targetPath), { recursive: true })
   if (!schemaSQL || schemaSQL.trim().length === 0) return
-  const target = getUserDbPath(appId, userId)
-  if (existsSync(target)) rmSync(target)
-  mkdirSync(getAppDbDirectory(appId), { recursive: true })
-  const db = new Database(target)
+  const db = new Database(targetPath)
   try {
     db.exec(schemaSQL)
   } finally {
@@ -55,10 +56,22 @@ export function initUserDbWithSchema(appId: string, userId: string, schemaSQL: s
   }
 }
 
-export function copyUserDbToDraft(appId: string, userId: string): void {
+export function initUserDbWithSchema(appId: string, userId: string, schemaSQL: string | null | undefined): void {
+  if (!schemaSQL || schemaSQL.trim().length === 0) return
+  initDbWithSchema(getUserDbPath(appId, userId), schemaSQL)
+}
+
+export function copyUserDbToDraft(appId: string, userId: string, schemaSQL?: string | null): void {
   const src = getUserDbPath(appId, userId)
-  if (existsSync(src))
-    copyFileSync(src, getDraftDbPath(appId, userId))
-  else
-    openDraftDb(userId, appId)
+  const target = getDraftDbPath(appId, userId)
+  if (existsSync(src)) {
+    // The installed DB already carries the schema plus the user's data — clone it.
+    mkdirSync(dirname(target), { recursive: true })
+    copyFileSync(src, target)
+    return
+  }
+  // No installed DB to seed from (e.g. the creator editing an app they never
+  // installed) — initialise a fresh draft DB with the version's schema so the
+  // preview can query its tables immediately.
+  initDbWithSchema(target, schemaSQL)
 }

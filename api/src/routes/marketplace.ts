@@ -296,6 +296,7 @@ function installMarketplaceListing(fastify: Fastify) {
         initUserDbWithSchema(appId, userId, latestVersion.dbSchema)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to initialize app database'
+        fastify.log.error({ err: error, appId, userId, versionId: latestVersion.id }, 'failed to initialize app database on install')
         return reply.status(500).send({ error: message })
       }
 

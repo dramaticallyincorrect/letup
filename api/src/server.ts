@@ -17,7 +17,7 @@ async function start() {
   const { app } = await import('./app.js')
   const { buildRegistry, beginShutdown } = await import('./plugins/shutdown.js')
 
-  const isDev = process.env.ENABLE_LOGGING === 'true' && process.env.NODE_ENV !== 'production'
+  const isDev = process.env.ENABLE_LOGGING === 'true' || process.env.NODE_ENV !== 'production'
 
   const server = Fastify({
     logger: isDev

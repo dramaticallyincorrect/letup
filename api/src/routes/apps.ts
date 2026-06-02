@@ -2,7 +2,7 @@ import {
   type FastifyPluginAsync,
 } from 'fastify'
 import { readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { join, posix } from 'node:path'
 import { compile } from '@tailwindcss/node'
 import { Scanner } from '@tailwindcss/oxide'
@@ -438,7 +438,7 @@ function createDraft(fastify: Fastify) {
       })
       .returning()
 
-    copyUserDbToDraft(appId, userId)
+    copyUserDbToDraft(appId, userId, latestVersion.dbSchema)
 
     return reply.code(201).send(draftVersion)
   })
@@ -566,6 +566,10 @@ function renderApp(fastify: Fastify) {
       const { appId } = request.params
       const draft = request.query.draft === 'true'
 
+      // Never cache — error responses (404 before the app is built) must not be
+      // served stale once the draft/version finally has compiled code.
+      reply.header('Cache-Control', 'no-store')
+
       const [appRow] = await fastify.db
         .select({ latestVersionNumber: apps.latestVersionNumber })
         .from(apps)
@@ -574,13 +578,17 @@ function renderApp(fastify: Fastify) {
       if (!appRow) return reply.code(404).type('text/plain').send('app not found')
 
       let compiledCode: string | null = null
+      // Draft previews are served the unminified dev-React build so creators see real
+      // error messages while building; published versions get the persisted minified bundle.
+      let sourceFiles: Array<{ path: string; content: string }> | null = null
       if (draft) {
         const [row] = await fastify.db
-          .select({ compiledCode: appVersions.compiledCode })
+          .select({ compiledCode: appVersions.compiledCode, sourceFiles: appVersions.sourceFiles })
           .from(appVersions)
           .where(and(eq(appVersions.appId, appId), eq(appVersions.isDraft, true)))
           .limit(1)
         compiledCode = row?.compiledCode ?? null
+        sourceFiles = row?.sourceFiles ?? null
       } else {
         const [row] = await fastify.db
           .select({ compiledCode: appVersions.compiledCode })
@@ -592,10 +600,12 @@ function renderApp(fastify: Fastify) {
 
       if (!compiledCode) return reply.code(404).type('text/plain').send('app not built yet')
 
+      const code = draft ? await getDevPreviewBundle(appId, compiledCode, sourceFiles) : compiledCode
+
       return reply
         .type('application/javascript; charset=utf-8')
         .header('Cache-Control', 'no-store')
-        .send(compiledCode)
+        .send(code)
     },
   )
 
@@ -607,6 +617,9 @@ function renderApp(fastify: Fastify) {
     request.assertAuthenticated()
     const { appId } = request.params
     const draft = request.query.draft === 'true'
+
+    // Never cache — keeps a stale 404 from sticking once the app exists.
+    reply.header('Cache-Control', 'no-store')
 
     const [appRow] = await fastify.db
       .select({ name: apps.name, latestVersionNumber: apps.latestVersionNumber })
@@ -887,6 +900,35 @@ export async function compileTailwindCss(files: Map<string, string>): Promise<st
 
 const esmShCache = new Map<string, string>()
 
+// Unminified preview bundles, compiled on demand from a draft's source files and
+// cached in memory keyed by appId. We never persist these — only the minified prod
+// bundle lives in the DB. The cache entry's `hash` is the prod compiledCode (which
+// is regenerated on every build), so it invalidates automatically when the draft changes.
+const devBundleCache = new Map<string, { hash: string; code: string }>()
+
+// Compile (or return cached) an unminified React bundle for the draft preview. Falls
+// back to the persisted minified bundle if there are no source files or the dev
+// compile fails, so the preview always renders something.
+async function getDevPreviewBundle(
+  appId: string,
+  compiledCode: string,
+  sourceFiles: Array<{ path: string; content: string }> | null,
+): Promise<string> {
+  if (!sourceFiles || sourceFiles.length === 0) return compiledCode
+  const hash = createHash('sha1').update(compiledCode).digest('hex')
+  const cached = devBundleCache.get(appId)
+  if (cached && cached.hash === hash) return cached.code
+  try {
+    const files = new Map(sourceFiles.map(f => [f.path, f.content]))
+    const code = await compileVirtualFiles(files, { dev: true })
+    devBundleCache.set(appId, { hash, code })
+    return code
+  } catch (err) {
+    console.warn('[dev-preview] dev React compile failed, serving minified bundle:', err)
+    return compiledCode
+  }
+}
+
 // Apps are rendered in iframes, so each bundle ships its own React. Pin canonical
 // esm.sh URLs so app code and transitively-resolved esm.sh packages all dedupe to
 // the same React instance (avoids hook errors from a duplicated ReactCurrentDispatcher).
@@ -897,14 +939,38 @@ const esmShCache = new Map<string, string>()
 // esbuild's cycle detection. We resolve those surface URLs to their underlying
 // versioned .mjs files once at startup so esbuild only ever bundles the leaf.
 const REACT_VERSION = '19'
-let REACT_URL = `https://esm.sh/react@${REACT_VERSION}`
-let REACT_JSX_RUNTIME_URL = `https://esm.sh/react@${REACT_VERSION}/jsx-runtime`
-let REACT_DOM_URL = `https://esm.sh/react-dom@${REACT_VERSION}`
-let REACT_DOM_CLIENT_URL = `https://esm.sh/react-dom@${REACT_VERSION}/client`
 
-let reactUrlsResolved = false
-async function resolveReactUrls(): Promise<void> {
-  if (reactUrlsResolved) return
+type ReactUrls = {
+  react: string
+  jsxRuntime: string
+  reactDom: string
+  reactDomClient: string
+}
+
+// esm.sh's `?dev` flag serves the unminified development build, which throws full
+// error messages (e.g. "Rendered more hooks than during the previous render")
+// instead of the opaque "Minified React error #NNN". We compile the draft/preview
+// bundle against dev React so creators see real errors while building; only the
+// minified prod bundle is ever persisted (published apps use that).
+const PROD_REACT_URLS: ReactUrls = {
+  react: `https://esm.sh/react@${REACT_VERSION}`,
+  jsxRuntime: `https://esm.sh/react@${REACT_VERSION}/jsx-runtime`,
+  reactDom: `https://esm.sh/react-dom@${REACT_VERSION}`,
+  reactDomClient: `https://esm.sh/react-dom@${REACT_VERSION}/client`,
+}
+const DEV_REACT_URLS: ReactUrls = {
+  react: `https://esm.sh/react@${REACT_VERSION}?dev`,
+  jsxRuntime: `https://esm.sh/react@${REACT_VERSION}/jsx-runtime?dev`,
+  reactDom: `https://esm.sh/react-dom@${REACT_VERSION}?dev`,
+  reactDomClient: `https://esm.sh/react-dom@${REACT_VERSION}/client?dev`,
+}
+
+let prodResolved: ReactUrls | null = null
+let devResolved: ReactUrls | null = null
+
+async function resolveReactUrls(dev: boolean): Promise<ReactUrls> {
+  const cached = dev ? devResolved : prodResolved
+  if (cached) return cached
   // Follow each wrapper's `export * from "..."` to its real versioned .mjs URL.
   async function follow(wrapperUrl: string): Promise<string> {
     const res = await fetch(wrapperUrl)
@@ -914,13 +980,17 @@ async function resolveReactUrls(): Promise<void> {
     if (!m) return wrapperUrl // no wrapper, use as-is
     return new URL(m[1], wrapperUrl).toString()
   }
-  ;[REACT_URL, REACT_JSX_RUNTIME_URL, REACT_DOM_URL, REACT_DOM_CLIENT_URL] = await Promise.all([
-    follow(REACT_URL),
-    follow(REACT_JSX_RUNTIME_URL),
-    follow(REACT_DOM_URL),
-    follow(REACT_DOM_CLIENT_URL),
+  const base = dev ? DEV_REACT_URLS : PROD_REACT_URLS
+  const [react, jsxRuntime, reactDom, reactDomClient] = await Promise.all([
+    follow(base.react),
+    follow(base.jsxRuntime),
+    follow(base.reactDom),
+    follow(base.reactDomClient),
   ])
-  reactUrlsResolved = true
+  const resolved: ReactUrls = { react, jsxRuntime, reactDom, reactDomClient }
+  if (dev) devResolved = resolved
+  else prodResolved = resolved
+  return resolved
 }
 
 // Virtual entry point — wraps the user's index.tsx with a React root mount.
@@ -1002,8 +1072,8 @@ export async function generateText({ prompt, system, model }) {
 }
 `
 
-export async function compileVirtualFiles(files: Map<string, string>): Promise<string> {
-  await resolveReactUrls()
+export async function compileVirtualFiles(files: Map<string, string>, opts: { dev?: boolean } = {}): Promise<string> {
+  const reactUrls = await resolveReactUrls(opts.dev ?? false)
   const result = await build({
     entryPoints: ['__entry__.tsx'],
     bundle: true,
@@ -1026,10 +1096,10 @@ export async function compileVirtualFiles(files: Map<string, string>): Promise<s
           }))
 
           // React / React-DOM → canonical esm.sh URLs so transitive imports dedupe.
-          b.onResolve({ filter: /^react$/ }, () => ({ path: REACT_URL, namespace: 'esm-sh' }))
-          b.onResolve({ filter: /^react\/jsx-runtime$/ }, () => ({ path: REACT_JSX_RUNTIME_URL, namespace: 'esm-sh' }))
-          b.onResolve({ filter: /^react-dom$/ }, () => ({ path: REACT_DOM_URL, namespace: 'esm-sh' }))
-          b.onResolve({ filter: /^react-dom\/client$/ }, () => ({ path: REACT_DOM_CLIENT_URL, namespace: 'esm-sh' }))
+          b.onResolve({ filter: /^react$/ }, () => ({ path: reactUrls.react, namespace: 'esm-sh' }))
+          b.onResolve({ filter: /^react\/jsx-runtime$/ }, () => ({ path: reactUrls.jsxRuntime, namespace: 'esm-sh' }))
+          b.onResolve({ filter: /^react-dom$/ }, () => ({ path: reactUrls.reactDom, namespace: 'esm-sh' }))
+          b.onResolve({ filter: /^react-dom\/client$/ }, () => ({ path: reactUrls.reactDomClient, namespace: 'esm-sh' }))
 
           b.onResolve({ filter: /^@\// }, args => {
             const relativePath = args.path.slice(2) // '@/lib/utils' → 'lib/utils'
@@ -1086,12 +1156,12 @@ export async function compileVirtualFiles(files: Map<string, string>): Promise<s
           b.onResolve({ filter: /.*/, namespace: 'esm-sh' }, args => {
             const resolved = new URL(args.path, args.importer).toString()
             if (/esm\.sh\/(v\d+\/)?(@\d+\/)?react(@|\?|\/|$)/.test(resolved) && !/react-dom/.test(resolved)) {
-              if (/jsx-runtime|jsx-dev-runtime/.test(resolved)) return { path: REACT_JSX_RUNTIME_URL, namespace: 'esm-sh' }
-              return { path: REACT_URL, namespace: 'esm-sh' }
+              if (/jsx-runtime|jsx-dev-runtime/.test(resolved)) return { path: reactUrls.jsxRuntime, namespace: 'esm-sh' }
+              return { path: reactUrls.react, namespace: 'esm-sh' }
             }
             if (/esm\.sh\/(v\d+\/)?(@\d+\/)?react-dom(@|\?|\/|$)/.test(resolved)) {
-              if (/\/client/.test(resolved)) return { path: REACT_DOM_CLIENT_URL, namespace: 'esm-sh' }
-              return { path: REACT_DOM_URL, namespace: 'esm-sh' }
+              if (/\/client/.test(resolved)) return { path: reactUrls.reactDomClient, namespace: 'esm-sh' }
+              return { path: reactUrls.reactDom, namespace: 'esm-sh' }
             }
             return { path: resolved, namespace: 'esm-sh' }
           })
